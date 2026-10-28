@@ -31,6 +31,12 @@ env:
 # dois kernels em paralelo (cada run leva ~40 min e o runner e o mesmo). Tags
 # sao refs diferentes, entao o build da variante retroarch nao e cancelado por
 # um push na main.
+#
+# ATENCAO ao ler o log de uma run cancelada: ela morre no meio do passo, sem
+# mensagem de erro, e a ultima linha pode ser algo como "--> Compactando imagem
+# final...". Isso NAO e falha: a run aparece como "cancelled" (nunca "failure") e
+# o passo interrompido esta marcado como cancelled. Confira o numero do run: o
+# mais novo da fila e o que vale.
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
@@ -587,6 +593,11 @@ jobs:
 
           sudo umount /mnt/rocknix-boot
           sudo losetup -d "$LOOP_DEV"
+          # O .img da ROCKNIX tem ~1,4 GB e so serviu para tirar um .dtb. Deixar
+          # isso no disco durante a criacao da imagem (3,5 GB) + gzip e desperdicio
+          # de espaco no runner; apagar aqui e seguro e imediato.
+          sudo rm -f rocknix-release.img
+          echo "--> release da ROCKNIX removido do disco (1,4 GB liberados)"
         fi
 
     - name: Preflight da variante (falha em segundos, sem compilar)
@@ -1513,7 +1524,13 @@ jobs:
         losetup -d ${LOOP_DEV}
 
         echo "--> Compactando imagem final..."
+        echo "--> espaco em disco antes do gzip:"; df -h . | tail -1
         gzip -f ${IMAGE_NAME}
+        # Marcador de FIM. Se o log de um run parar em "Compactando imagem final"
+        # sem esta linha, a run foi CANCELADA no meio (concurrency: um push novo na
+        # main cancela o anterior) — nao e falha de build. Ver AGENTS.md §5.
+        echo "--> imagem pronta: ${IMAGE_NAME}.gz ($(du -h ${IMAGE_NAME}.gz | cut -f1))"
+        echo "--> espaco em disco depois:"; df -h . | tail -1
         EOF
 
     - name: Prepare Output Directory

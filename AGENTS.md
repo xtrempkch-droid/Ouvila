@@ -286,6 +286,19 @@ imagem; ou marcar a tag num commit limpo. Um `git push --delete` da tag e recria
 outro commit resolve sem force-push na branch. Para conferir se o build nasceu, olhe
 `/actions/runs?branch=<tag>`: se voltar vazio, o push foi engolido pela marca.
 
+**Cuidado: push na `main` cancela o build que está rodando.** O `concurrency` do
+workflow é `group: build-${{ github.ref }}` e `cancel-in-progress: true`. Então, antes de
+empurrar qualquer commit para a `main`:
+
+1. olhe `/actions/runs?per_page=4`. Se houver um run **`in_progress`** na `main`, ele vai
+   morrer no meio — e o log dele termina **sem mensagem de erro** (a última linha pode
+   ser `--> Compactando imagem final...`), porque o processo é morto, não falha.
+2. A run aparece como **`cancelled`**, nunca como `failure`. A run cancelada **não**
+   publica imagem nem release.
+3. Portanto: se o objetivo é ter a imagem, **espere a run atual terminar** ou aceite
+   perder ~40 min de compilação. Para não bloquear trabalho de documentação, mande o
+   commit para um branch, ou faça o push depois.
+
 ## 5.1 Acesso ao aparelho (para depurar)
 
 - Console **serial** (`ttyS2`, 1500000n8) e **tty1** com autologin do `root`.
