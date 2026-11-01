@@ -162,6 +162,12 @@ alvo só está no pacote de **runtime**: baixar apenas os `-dev` resolve os cabe
 quebra no link (`cannot find -lavformat`). O script baixa os dois e confere cada `-l`
 (symlink **e** alvo) antes de compilar — falha em segundos em vez de em 40 minutos.
 
+Os caminhos de cabeçalho também não são óbvios: `libdrm-dev` põe `drm.h` em
+`/usr/include/libdrm`, `libfreetype-dev` em `/usr/include/freetype2` e o FFmpeg do
+Ubuntu em `/usr/include/<triple>/`. O script descobre os três (e usa `pkg-config`
+quando existe) e **testa cada cabeçalho antes de compilar**, listando os pacotes que
+faltam em vez de morrer num `fatal error` no meio de um arquivo.
+
 O binário tem modos que existem só para isso:
 
 ```sh

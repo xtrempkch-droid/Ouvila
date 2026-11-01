@@ -992,7 +992,21 @@ outro commit resolve sem force-push na branch. Para conferir se o build nasceu, 
      (meu fixture de teste estava errado, não o parser).
   6. `TRIP`/`&` em `snprintf` com tamanho estimado gera `-Wformat-truncation`; use
      `%.*s`.
-  7. **Link arm64 com sysroot baixado à mão:** no Debian o `.so` é *symlink* e o alvo
+  7. **Cabeçalhos que não ficam em `/usr/include`.** O modo `--native` do
+     `build/media-player.sh` falhou no runner com `fatal error: drm.h` e
+     `ft2build.h`: `libdrm-dev` instala `drm.h` em `/usr/include/libdrm` e
+     `libfreetype-dev` em `/usr/include/freetype2`, e o FFmpeg do Ubuntu em
+     `/usr/include/<triple>/`. Agora o script descobre isso (diretórios
+     conhecidos + `pkg-config` quando existe) e **testa cada cabeçalho** antes de
+     compilar, dizendo qual pacote instalar. `WM_BASE_INC` permite apontar para
+     uma árvore com layout de `/usr` — é como o caso do CI é reproduzido sem
+     instalar os `-dev`.
+  8. **`[ -d x ] && algo` dentro de função com `set -e`:** a função devolve o
+     status do teste e o script **morre em silêncio, sem mensagem nenhuma** (foi
+     o que aconteceu ao corrigir o item acima: `rc=1` e zero de saída). Use
+     `if ...; then ...; fi` dentro de helpers. Mesma família do
+     `EXIT_ACTION=$(...)` já documentado.
+  9. **Link arm64 com sysroot baixado à mão:** no Debian o `.so` é *symlink* e o alvo
      só existe no pacote de **runtime** — baixar só os `-dev` passa no `-fsyntax-only`
      e falha em `cannot find -lavformat`. Por isso o sysroot sai de
      `build/media-player-sysroot.sh`, que baixa dev + runtime e **confere cada `-l`**

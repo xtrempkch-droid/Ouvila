@@ -24,7 +24,9 @@ if [ -z "$DESTINO" ]; then
     exit 2
 fi
 KEEP_DEBS=0
-[ "${2:-}" = "--keep-debs" ] && KEEP_DEBS=1
+if [ "${2:-}" = "--keep-debs" ]; then
+    KEEP_DEBS=1
+fi
 
 SUITE=${WM_SUITE:-bookworm}
 MIRROR=${WM_MIRROR:-http://deb.debian.org/debian}

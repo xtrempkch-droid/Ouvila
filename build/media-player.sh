@@ -49,36 +49,10 @@ fi
 case "$MODO" in
     native)
         CC=${WM_CC:-gcc}
-        SYSROOT_INC=""
-        LINK=(-lavformat -lavcodec -lavutil -lswscale -lswresample -lasound -lfreetype -ldrm -lpthread -lm)
-        if [ -n "${WM_SYSROOT:-}" ]; then
-            # Sysroot local (sem root para instalar os -dev): os headers do
-            # FFmpeg ficam em usr/include/<triple>/, como no Debian. Só entra o
-            # triple do HOST: um sysroot arm64 aqui faria o ld pegar bibliotecas
-            # de outra arquitetura e falhar no meio do link (ou pior, com
-            # "pulando ... incompatível", parecendo falta de pacote).
-            HOST_TRIPLE=$("$CC" -dumpmachine 2>/dev/null || echo x86_64-linux-gnu)
-            SYSROOT_INC="-I$WM_SYSROOT/usr/include -I$WM_SYSROOT/usr/include/libdrm -I$WM_SYSROOT/usr/include/freetype2"
-            if [ -d "$WM_SYSROOT/usr/include/$HOST_TRIPLE" ]; then
-                SYSROOT_INC="$SYSROOT_INC -I$WM_SYSROOT/usr/include/$HOST_TRIPLE"
-                LINK+=(-L"$WM_SYSROOT/usr/lib/$HOST_TRIPLE")
-            else
-                echo "!!! o sysroot nao tem usr/include/$HOST_TRIPLE" >&2
-                echo "!!! (para arm64 use o modo cross, nao --native)" >&2
-                exit 1
-            fi
-        fi
         ;;
     cross|check)
         CROSS=${WM_CROSS:-aarch64-linux-gnu-}
         CC=${WM_CC:-${CROSS}gcc}
-        if [ -z "${WM_SYSROOT:-}" ] || [ ! -d "$WM_SYSROOT" ]; then
-            echo "!!! WM_SYSROOT nao definido (precisa conter usr/include do arm64)" >&2
-            exit 1
-        fi
-        SYSROOT_INC="-I$WM_SYSROOT/usr/include -I$WM_SYSROOT/usr/include/aarch64-linux-gnu -I$WM_SYSROOT/usr/include/libdrm -I$WM_SYSROOT/usr/include/freetype2"
-        LINK=(-L"$WM_SYSROOT/usr/lib/aarch64-linux-gnu" -L"$WM_SYSROOT/usr/lib"
-              -lavformat -lavcodec -lavutil -lswscale -lswresample -lasound -lfreetype -ldrm -lpthread -lm)
         ;;
 esac
 
@@ -87,13 +61,111 @@ if ! command -v "$CC" >/dev/null 2>&1; then
     exit 1
 fi
 
+# Descobrir os caminhos de cabeçalho é o ponto mais frágil do build, porque
+# cada biblioteca escolhe o seu: libdrm instala `drm.h` em /usr/include/libdrm
+# (o `xf86drm.h` fica em /usr/include e faz `#include <drm.h>`), FreeType em
+# /usr/include/freetype2 e o FFmpeg em /usr/include/<triple>/libavformat.
+# Sem esses -I o erro é "fatal error: drm.h: No such file or directory" — foi
+# exatamente a falha do CI na primeira tentativa.
+HOST_TRIPLE=$("$CC" -dumpmachine 2>/dev/null || echo x86_64-linux-gnu)
+case "$MODO" in
+    native)
+        # WM_BASE_INC permite apontar para uma árvore com o layout de /usr do
+        # sistema (usado nos testes: simula a máquina do CI sem instalar os -dev).
+        if [ -n "${WM_SYSROOT:-}" ]; then
+            BASE_INC="$WM_SYSROOT/usr/include"
+        else
+            BASE_INC=${WM_BASE_INC:-/usr/include}
+        fi
+        TRIPLE_FOR_INC="$HOST_TRIPLE"
+        ;;
+    *)
+        TRIPLE_FOR_INC=aarch64-linux-gnu
+        BASE_INC="$WM_SYSROOT/usr/include"
+        ;;
+esac
+
+SYSROOT_INC=""
+# Sempre devolve 0: com `set -e`, um `[ -d ... ]` falso no fim da função mata o
+# script em silêncio (sem mensagem nenhuma) — a mesma armadilha do
+# `EXIT_ACTION=$(...)` documentada no AGENTS.md.
+add_inc() {
+    if [ -d "$1" ]; then
+        SYSROOT_INC="${SYSROOT_INC:+$SYSROOT_INC }-I$1"
+    fi
+    return 0
+}
+add_inc "$BASE_INC"
+add_inc "$BASE_INC/libdrm"
+add_inc "$BASE_INC/freetype2"
+add_inc "$BASE_INC/$TRIPLE_FOR_INC"
+
+# pkg-config é a fonte oficial dos caminhos quando os -dev estão instalados
+# (caso do runner). Ele só acrescenta; os diretórios acima cobrem o resto.
+if command -v pkg-config >/dev/null 2>&1; then
+    if pkg-config --exists libavformat libavcodec libavutil libswscale \
+            libswresample alsa freetype2 libdrm 2>/dev/null; then
+        for extra in $(pkg-config --cflags libavformat libavcodec libavutil \
+                            libswscale libswresample alsa freetype2 libdrm); do
+            case " $SYSROOT_INC " in
+                *" $extra "*) ;;
+                *) SYSROOT_INC="${SYSROOT_INC:+$SYSROOT_INC }$extra" ;;
+            esac
+        done
+    fi
+fi
+
+LINK=(-lavformat -lavcodec -lavutil -lswscale -lswresample -lasound -lfreetype -ldrm -lpthread -lm)
+if [ "$MODO" = "native" ]; then
+    if [ -n "${WM_SYSROOT:-}" ]; then
+        # Só o triple do HOST: um sysroot arm64 aqui faria o ld pegar
+        # bibliotecas de outra arquitetura e falhar no meio do link (ou pior,
+        # com "pulando ... incompatível", parecendo falta de pacote).
+        if [ ! -d "$WM_SYSROOT/usr/lib/$HOST_TRIPLE" ]; then
+            echo "!!! o sysroot nao tem usr/lib/$HOST_TRIPLE" >&2
+            echo "!!! (para arm64 use o modo cross, nao --native)" >&2
+            exit 1
+        fi
+        LINK=(-L"$WM_SYSROOT/usr/lib/$HOST_TRIPLE" "${LINK[@]}")
+    else
+        # Sem sysroot: as bibliotecas vêm do sistema (ou de BASE_INC/../lib,
+        # quando WM_BASE_INC aponta para uma árvore de teste).
+        BASE_ROOT=$(cd "$BASE_INC/.." 2>/dev/null && pwd)
+        if [ -n "$BASE_ROOT" ] && [ -d "$BASE_ROOT/lib/$HOST_TRIPLE" ]; then
+            LINK=(-L"$BASE_ROOT/lib/$HOST_TRIPLE" "${LINK[@]}")
+        fi
+    fi
+elif [ -n "${WM_SYSROOT:-}" ]; then
+    LINK=(-L"$WM_SYSROOT/usr/lib/aarch64-linux-gnu" -L"$WM_SYSROOT/usr/lib" "${LINK[@]}")
+fi
+
 # Os mesmos avisos do kernel: -Werror não é usado porque um aviso de nova versão
 # de compilador não deve quebrar a imagem; mas os avisos aparecem no log.
 CFLAGS=(-std=c11 -O2 -Wall -Wextra -Wno-unused-parameter)
 
 FONTES=(audio.c decoder.c drm.c font.c gfx.c input.c library.c main.c radio.c ui.c util.c)
 
+# Cada cabeçalho obrigatório é testado isoladamente: se faltar, o erro diz qual
+# pacote instalar em vez de "fatal error" no meio de um arquivo qualquer.
+FALTA_H=0
+for h in drm.h xf86drmMode.h ft2build.h alsa/asoundlib.h \
+         libavformat/avformat.h libavcodec/avcodec.h \
+         libswscale/swscale.h libswresample/swresample.h; do
+    if ! printf '#include <%s>\n' "$h" | "$CC" $SYSROOT_INC -x c -fsyntax-only - 2>/dev/null; then
+        echo "!!! cabecalho nao encontrado: <$h> (faltam os -dev? veja abaixo)" >&2
+        FALTA_H=$((FALTA_H+1))
+    fi
+done
+if [ "$FALTA_H" -gt 0 ]; then
+    echo "!!! $FALTA_H cabecalho(s) ausente(s). Pacotes: libdrm-dev libfreetype-dev" >&2
+    echo "!!! libasound2-dev libavformat-dev libavcodec-dev libavutil-dev" >&2
+    echo "!!! libswscale-dev libswresample-dev" >&2
+    echo "!!! flags usadas: $SYSROOT_INC" >&2
+    exit 1
+fi
+
 echo "--> compilando walkmam-media ($MODO) com $CC"
+echo "--> includes: $SYSROOT_INC"
 for f in "${FONTES[@]}"; do
     [ -f "$SRC_DIR/$f" ] || { echo "!!! fonte ausente: $SRC_DIR/$f" >&2; exit 1; }
 done
@@ -106,7 +178,9 @@ if [ "$MODO" = check ]; then
             rc=1
         fi
     done
-    [ "$rc" -eq 0 ] && echo "--> ok: todas as fontes compilam contra o sysroot"
+    if [ "$rc" -eq 0 ]; then
+        echo "--> ok: todas as fontes compilam contra o sysroot"
+    fi
     exit "$rc"
 fi
 

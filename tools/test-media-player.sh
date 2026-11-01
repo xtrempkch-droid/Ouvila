@@ -207,7 +207,28 @@ else
     pula "gst-launch-1.0 ausente (teste de video nao executado)"
 fi
 
-echo "== 6. launcher =="
+echo "== 6. descoberta de cabeçalhos (--native, caso do CI) =="
+# O CI falhava em `drm.h`/`ft2build.h` porque o modo --native não adicionava
+# /usr/include/libdrm nem /usr/include/freetype2. WM_BASE_INC aponta para uma
+# árvore com o layout de /usr, então o caso é reproduzido sem instalar nada.
+if [ -n "${WM_TEST_BASE_INC:-}" ] && [ -d "${WM_TEST_BASE_INC:-}" ]; then
+    if WM_BASE_INC="$WM_TEST_BASE_INC" WM_OUT="$TMP/bin-flags" \
+        "$ROOT_DIR/build/media-player.sh" --native >"$TMP/flags.log" 2>&1; then
+        if grep -q -- '-I.*libdrm' "$TMP/flags.log" && grep -q -- '-I.*freetype2' "$TMP/flags.log"; then
+            ok "modo --native encontra libdrm/freetype2"
+        else
+            falha "--native compilou mas sem os -I de libdrm/freetype2"
+            sed 's/^/    /' "$TMP/flags.log"
+        fi
+    else
+        falha "--native nao compilou com o layout do sistema"
+        tail -6 "$TMP/flags.log" | sed 's/^/    /'
+    fi
+else
+    pula "defina WM_TEST_BASE_INC=<arvore com layout de /usr> para testar isso"
+fi
+
+echo "== 7. launcher =="
 LAUNCHER="$ROOT_DIR/variants/media-player/overlay/usr/local/bin/start-media-player.sh"
 if [ ! -x "$LAUNCHER" ]; then
     falha "launcher ausente: $LAUNCHER"
