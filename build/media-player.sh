@@ -53,14 +53,20 @@ case "$MODO" in
         LINK=(-lavformat -lavcodec -lavutil -lswscale -lswresample -lasound -lfreetype -ldrm -lpthread -lm)
         if [ -n "${WM_SYSROOT:-}" ]; then
             # Sysroot local (sem root para instalar os -dev): os headers do
-            # FFmpeg ficam em usr/include/<triple>/, como no Debian.
+            # FFmpeg ficam em usr/include/<triple>/, como no Debian. Só entra o
+            # triple do HOST: um sysroot arm64 aqui faria o ld pegar bibliotecas
+            # de outra arquitetura e falhar no meio do link (ou pior, com
+            # "pulando ... incompatível", parecendo falta de pacote).
+            HOST_TRIPLE=$("$CC" -dumpmachine 2>/dev/null || echo x86_64-linux-gnu)
             SYSROOT_INC="-I$WM_SYSROOT/usr/include -I$WM_SYSROOT/usr/include/libdrm -I$WM_SYSROOT/usr/include/freetype2"
-            for triple in x86_64-linux-gnu aarch64-linux-gnu; do
-                [ -d "$WM_SYSROOT/usr/include/$triple" ] && \
-                    SYSROOT_INC="$SYSROOT_INC -I$WM_SYSROOT/usr/include/$triple"
-                [ -d "$WM_SYSROOT/usr/lib/$triple" ] && \
-                    LINK+=(-L"$WM_SYSROOT/usr/lib/$triple")
-            done
+            if [ -d "$WM_SYSROOT/usr/include/$HOST_TRIPLE" ]; then
+                SYSROOT_INC="$SYSROOT_INC -I$WM_SYSROOT/usr/include/$HOST_TRIPLE"
+                LINK+=(-L"$WM_SYSROOT/usr/lib/$HOST_TRIPLE")
+            else
+                echo "!!! o sysroot nao tem usr/include/$HOST_TRIPLE" >&2
+                echo "!!! (para arm64 use o modo cross, nao --native)" >&2
+                exit 1
+            fi
         fi
         ;;
     cross|check)
