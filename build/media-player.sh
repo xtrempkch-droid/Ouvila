@@ -224,6 +224,26 @@ mkdir -p "$(dirname -- "$OUT")"
     -o "$OUT" "${FONTES[@]/#/$SRC_DIR/}" \
     "${LINK[@]}"
 
+# A imagem roda bookworm (glibc 2.36). Compilar com os cabeçalhos do runner
+# (glibc mais novo) pode gerar símbolos que só existem lá — foi o que aconteceu:
+# com _GNU_SOURCE, `sscanf`/`strtol`/`fscanf` viram `__isoc23_*`, que exigem
+# GLIBC_2.38, e o binário morria no aparelho com "version GLIBC_2.38 not found".
+# Esta checagem pega isso em segundos, sem precisar do qemu.
+if [ "$MODO" = cross ] && command -v objdump >/dev/null 2>&1; then
+    GLIBC_MAX=$(objdump -T "$OUT" 2>/dev/null \
+        | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sed 's/GLIBC_//' | sort -V | tail -1)
+    if [ -n "$GLIBC_MAX" ]; then
+        if ! awk -v a="$GLIBC_MAX" 'BEGIN { split(a, p, "."); if (p[1] > 2 || (p[1] == 2 && p[2] > 36)) exit 1; exit 0 }'; then
+            echo "!!! o binario exige GLIBC_$GLIBC_MAX, mas a imagem (bookworm) tem 2.36" >&2
+            echo "!!! normalmente e _GNU_SOURCE ligando as redirecoes C23 (__isoc23_*);" >&2
+            echo "!!! use _DEFAULT_SOURCE (ver variants/media-player/src/wm.h)" >&2
+            objdump -T "$OUT" | grep -E "GLIBC_2\.(3[7-9]|[4-9][0-9])" | head -5 >&2
+            exit 1
+        fi
+        echo "--> glibc exigida: no maximo $GLIBC_MAX (bookworm tem 2.36)"
+    fi
+fi
+
 if [ "$MODO" = cross ]; then
     # Garante que o binário é da arquitetura certa: instalar um x86_64 no
     # rootfs arm64 só apareceria no aparelho, como "exec format error".

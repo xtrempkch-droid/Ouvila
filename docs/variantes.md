@@ -169,6 +169,11 @@ Três detalhes que só aparecem em cross-compilação:
 3. o link usa `-Wl,-rpath-link` e também `<sysroot>/lib/aarch64-linux-gnu`, porque
    `dpkg-deb -x` não aplica o usrmerge (zlib/libselinux ficam em `/lib`).
 
+O código usa `_DEFAULT_SOURCE`, não `_GNU_SOURCE`: no glibc >= 2.38 o `_GNU_SOURCE`
+transforma `sscanf`/`strtol`/`fscanf` em `__isoc23_*`, que exigem **GLIBC_2.38** em
+tempo de execução — e a imagem roda bookworm (2.36). O build confere com `objdump -T`
+que a maior versão exigida é <= 2.36 e falha com a explicação se não for.
+
 O `media-player-sysroot.sh` existe porque no Debian o arquivo `.so` é um *symlink* e o
 alvo só está no pacote de **runtime**: baixar apenas os `-dev` resolve os cabeçalhos e
 quebra no link (`cannot find -lavformat`). O script baixa os dois e confere cada `-l`

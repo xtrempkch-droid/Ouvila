@@ -22,7 +22,14 @@
 #ifndef WM_H
 #define WM_H
 
-#define _GNU_SOURCE
+/* _DEFAULT_SOURCE, e NÃO _GNU_SOURCE: no glibc >= 2.38 o _GNU_SOURCE liga as
+ * redireções C23 (`__isoc23_strtol`, `__isoc23_sscanf`, `__isoc23_fscanf`), que
+ * passam a exigir GLIBC_2.38 em tempo de execução. A imagem roda bookworm
+ * (glibc 2.36), então o binário compilado no runner morria com
+ *   version `GLIBC_2.38' not found (required by /usr/local/bin/walkmam-media)
+ * _DEFAULT_SOURCE dá POSIX.1-2008 + BSD (o que estes arquivos usam: O_CLOEXEC,
+ * clock_gettime, localtime_r, execlp, ...) sem pedir C23. */
+#define _DEFAULT_SOURCE
 
 #include <stdbool.h>
 #include <stdint.h>

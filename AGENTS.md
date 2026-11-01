@@ -1031,7 +1031,16 @@ outro commit resolve sem force-push na branch. Para conferir se o build nasceu, 
          as `DT_NEEDED` precisam de `-Wl,-rpath-link`. E `dpkg-deb -x` **não** aplica
          o usrmerge: `zlib1g`/`libselinux` caem em `<sysroot>/lib/aarch64-linux-gnu`,
          não em `usr/lib` — sem esse caminho o link falha em `gztell`/`getfilecon`.
-  12. **Link arm64 com sysroot baixado à mão:** no Debian o `.so` é *symlink* e o alvo
+  12. **`_GNU_SOURCE` + headers novos = binário que não roda no bookworm.** No glibc
+      >= 2.38 o `_GNU_SOURCE` liga as redireções C23: `sscanf`, `strtol` e `fscanf`
+      viram `__isoc23_*`, que exigem **GLIBC_2.38** em tempo de execução. Compilando
+      no runner (Ubuntu, glibc nova) isso passa no build e morre no aparelho com
+      `version 'GLIBC_2.38' not found` — foi o que aconteceu no CI do media-player,
+      já com o binário arm64 linkado e instalado. Use **`_DEFAULT_SOURCE`** (dá
+      POSIX.1-2008 + BSD, que é o que o código usa). O `build/media-player.sh`
+      agora confere com `objdump -T` que a maior versão exigida é <= 2.36 e, se não
+      for, aponta o `__isoc23_*` no log.
+  13. **Link arm64 com sysroot baixado à mão:** no Debian o `.so` é *symlink* e o alvo
      só existe no pacote de **runtime** — baixar só os `-dev` passa no `-fsyntax-only`
      e falha em `cannot find -lavformat`. Por isso o sysroot sai de
      `build/media-player-sysroot.sh`, que baixa dev + runtime e **confere cada `-l`**
