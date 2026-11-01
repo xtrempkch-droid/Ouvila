@@ -790,6 +790,39 @@ jobs:
           tools/install-image-to-emmc.sh \
           rootfs/usr/local/bin/install-image-to-emmc.sh
 
+        # Tela de boot: Plymouth desenhando a arte da marca enquanto o app nao sobe.
+        # A arte tem DOIS sentidos (paisagem e retrato) porque o painel da X55 e
+        # 720x1280 (retrato) e o da X35 640x480; o tema escolhe pelo tamanho real
+        # da tela. Gerado por tools/branding/gerar-marca.py a partir de docs/logo.jpg.
+        echo "--> Instalando a tela de boot (Plymouth, tema ouvila)..."
+        for arq in ouvila.plymouth ouvila.script splash-paisagem.png splash-retrato.png; do
+          sudo install -D -m 0644 \
+            "common/overlay/usr/share/plymouth/themes/ouvila/$arq" \
+            "rootfs/usr/share/plymouth/themes/ouvila/$arq"
+        done
+        sudo install -D -m 0644 \
+          common/overlay/etc/plymouth/plymouthd.conf \
+          rootfs/etc/plymouth/plymouthd.conf
+        # O tema nao depende de update-alternatives: plymouthd le Theme= do conf.
+        # Conferido no pacote do bookworm: plymouth-start.service esta em
+        # sysinit.target.wants, entao a tela aparece mesmo SEM initramfs (o nosso
+        # boot vai direto do kernel para o rootfs).
+        for arq in ouvila.plymouth ouvila.script splash-paisagem.png splash-retrato.png; do
+          sudo test -f "rootfs/usr/share/plymouth/themes/ouvila/$arq" || {
+            echo "!!! tema de boot incompleto: falta $arq" >&2; exit 1; }
+        done
+        sudo grep -qx 'Theme=ouvila' rootfs/etc/plymouth/plymouthd.conf || {
+          echo "!!! plymouthd.conf nao aponta para o tema ouvila" >&2; exit 1; }
+
+        echo "--> Instalando o icone da variante $VARIANT (arte separada por app)..."
+        ICONE="variants/$VARIANT/overlay/usr/share/ouvila/branding/icone.png"
+        if [ -f "$ICONE" ]; then
+          sudo install -D -m 0644 "$ICONE" rootfs/usr/share/ouvila/branding/icone.png
+        else
+          echo "!!! icone da variante ausente: $ICONE (rode tools/branding/gerar-marca.py)" >&2
+          exit 1
+        fi
+
         echo "--> Instalando o script de diagnóstico (dmesg, USB, input) no cartão SD"
         echo "--> a cada boot — assim dá pra ler no PC sem precisar de serial/rede/solda."
         echo "--> (o script vem de variants/kodi/overlay; não é mais copiado inline aqui)"
@@ -908,6 +941,11 @@ jobs:
           sudo install -D -m 0644 \
             variants/kodi/overlay/usr/share/kodi/addons/script.ouvila.radio/default.py \
             rootfs/usr/share/kodi/addons/script.ouvila.radio/default.py
+          # Icone do add-on na TV. A arte "musica" e a certa aqui: o add-on e o
+          # rádio (Wi-Fi/BT + tocar), nao o player de video do Kodi.
+          sudo install -D -m 0644 \
+            variants/media-player/overlay/usr/share/ouvila/branding/icone.png \
+            rootfs/usr/share/kodi/addons/script.ouvila.radio/resources/icon.png
           # O add-on e script Python: se nao compilar, o Kodi falha so na hora de
           # abrir. Checamos a sintaxe aqui para o build quebrar antes.
           python3 -m py_compile \
@@ -1469,7 +1507,7 @@ jobs:
         LABEL Ouvila (Powkiddy X55 - ${VARIANT:-kodi})
             KERNEL /Image
             FDT /dtbs/rk3566-powkiddy-x55.dtb
-            APPEND quiet rootwait earlycon=uart8250,mmio32,0xfe660000 console=ttyS2,1500000n8 console=tty1 root=PARTUUID=${ROOT_UUID} rw ouvila_x55_gamepad=rocknix-v1
+            APPEND quiet splash vt.global_cursor_default=0 rootwait earlycon=uart8250,mmio32,0xfe660000 console=ttyS2,1500000n8 console=tty1 root=PARTUUID=${ROOT_UUID} rw ouvila_x55_gamepad=rocknix-v1
         BOOTCFG
 
         # Referência: variante usando o nosso próprio .dtb compilado, caso o
@@ -1478,7 +1516,7 @@ jobs:
         LABEL Mainline (X35S - nosso .dtb)
             KERNEL /Image
             FDT /dtbs/rk3566-powkiddy-x35s-nosso.dtb
-            APPEND quiet rootwait earlycon=uart8250,mmio32,0xfe660000 console=ttyS2,1500000n8 console=tty1 root=PARTUUID=${ROOT_UUID} rw
+            APPEND quiet splash vt.global_cursor_default=0 rootwait earlycon=uart8250,mmio32,0xfe660000 console=ttyS2,1500000n8 console=tty1 root=PARTUUID=${ROOT_UUID} rw
         BOOTCFG3
 
         # Mesma imagem serve para X35S/X35H (mesmo DTB): no PC (partição FAT),
@@ -1492,7 +1530,7 @@ jobs:
         LABEL Ouvila (Powkiddy X35S / X35H)
             KERNEL /Image
             FDT /${X35S_DEFAULT}
-            APPEND quiet rootwait earlycon=uart8250,mmio32,0xfe660000 console=ttyS2,1500000n8 console=tty1 root=PARTUUID=${ROOT_UUID} rw
+            APPEND quiet splash vt.global_cursor_default=0 rootwait earlycon=uart8250,mmio32,0xfe660000 console=ttyS2,1500000n8 console=tty1 root=PARTUUID=${ROOT_UUID} rw
         X35SBOOT
 
         if [ -n "$PERIPH_FDT" ]; then
@@ -1500,7 +1538,7 @@ jobs:
         LABEL Ouvila (X35H/X35S - USB peripheral, teste)
             KERNEL /Image
             FDT $PERIPH_FDT
-            APPEND quiet rootwait earlycon=uart8250,mmio32,0xfe660000 console=ttyS2,1500000n8 console=tty1 root=PARTUUID=${ROOT_UUID} rw
+            APPEND quiet splash vt.global_cursor_default=0 rootwait earlycon=uart8250,mmio32,0xfe660000 console=ttyS2,1500000n8 console=tty1 root=PARTUUID=${ROOT_UUID} rw
         PERIPHBOOT
           echo "--> Alternativa de boot gravada: extlinux/extlinux.conf.x35s-peripheral"
         fi
@@ -1510,7 +1548,7 @@ jobs:
         LABEL Ouvila (Powkiddy X55 - USB peripheral, teste)
             KERNEL /Image
             FDT $X55_PERIPH_FDT
-            APPEND quiet rootwait earlycon=uart8250,mmio32,0xfe660000 console=ttyS2,1500000n8 console=tty1 root=PARTUUID=${ROOT_UUID} rw ouvila_x55_gamepad=rocknix-v1
+            APPEND quiet splash vt.global_cursor_default=0 rootwait earlycon=uart8250,mmio32,0xfe660000 console=ttyS2,1500000n8 console=tty1 root=PARTUUID=${ROOT_UUID} rw ouvila_x55_gamepad=rocknix-v1
         X55PERIPH
           echo "--> Alternativa de boot gravada: extlinux/extlinux.conf.x55-peripheral"
         fi

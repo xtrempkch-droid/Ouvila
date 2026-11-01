@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Ouvila
+Description=Arte da marca Ouvila na tela de inicialização
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/ouvila
+ScriptFile=/usr/share/plymouth/themes/ouvila/ouvila.script

@@ -2,7 +2,10 @@
 Description=Ouvila Media Player (app unico: DRM/KMS + FFmpeg + ALSA) no tty1
 # O app abre o DRM e vira dono do tty1: o getty do tty1 precisa estar fora
 # (a imagem o mascara) e a sessao de usuario encerrada.
-After=systemd-user-sessions.service systemd-udev-settle.service sound.target
+# Ordem com a tela de boot: o Plymouth segura o DRM até plymouth-quit (que roda
+# em multi-user). Sem esta linha os dois podem subir juntos e disputar o
+# conector — o sintoma seria tela preta. After= em unit ausente é inofensivo.
+After=systemd-user-sessions.service systemd-udev-settle.service sound.target plymouth-quit.service
 Wants=sound.target
 Conflicts=getty@tty1.service
 StartLimitIntervalSec=300

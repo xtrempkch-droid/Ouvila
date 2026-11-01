@@ -17,3 +17,10 @@ wireless-tools
 rfkill
 bluez
 busybox
+
+# Tela de boot (Plymouth). So o pacote principal: ele ja traz o plugin
+# "script" (/usr/lib/<triple>/plymouth/script.so) e o renderizador DRM, que e o
+# que o tema do Ouvila usa. "plymouth-themes" so tem temas de exemplo
+# (tribar/text/details) e nao e necessario. Sem initramfs tambem funciona: a
+# unit plymouth-start vem em sysinit.target.wants do pacote.
+plymouth

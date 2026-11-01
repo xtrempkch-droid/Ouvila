@@ -1,4 +1,4 @@
-# Ouvila RK3566
+# Ouvila
 
 Sistema Linux para media players RK3566, com foco inicial nos handhelds Powkiddy X55, X35S e X35H.
 

@@ -587,3 +587,37 @@ CFG
 timeout 12 retroarch --config /root/.config/retroarch/retroarch.cfg \
     --appendconfig /tmp/probe.cfg --verbose 2>&1 | grep -iE "autoconf|joypad"
 ```
+
+## Tela de boot (Plymouth) e ícone de cada variante
+
+A imagem liga com o **logo do Ouvila na tela** em vez de texto do kernel. A arte vem
+de `docs/logo.jpg` e é gerada por `tools/branding/gerar-marca.py` (reprodutível; rode de
+novo se o logo mudar).
+
+| Arquivo | Onde | Para quê |
+| --- | --- | --- |
+| `common/overlay/usr/share/plymouth/themes/ouvila/` | todas as variantes | tema do boot (`.plymouth` + `.script` + 2 PNG) |
+| `common/overlay/etc/plymouth/plymouthd.conf` | todas as variantes | `Theme=ouvila` |
+| `variants/<variante>/overlay/usr/share/ouvila/branding/icone.png` | cada imagem | ícone do app daquela variante |
+| `.../script.ouvila.radio/resources/icon.png` | só `kodi` | ícone do add-on na TV (arte de música) |
+
+**Por que DUAS artes de boot** (`splash-paisagem.png` 1280x720 e `splash-retrato.png`
+720x1280): o Plymouth desenha **antes** de qualquer rotação — quem gira é o Weston,
+depois. O painel da X55 é retrato (720x1280) e o da X35S/X35H é paisagem (640x480). O
+tema escolhe pelo tamanho real da tela (`Window.GetWidth() > Window.GetHeight()`), então
+tela nova cai num dos dois casos sem precisar de código novo.
+
+**Funciona sem initramfs.** Esta imagem não usa initramfs (boot direto do kernel para o
+rootfs). Conferido no pacote do bookworm: `plymouth-start.service` vem em
+`sysinit.target.wants`, e o plugin `script` + renderizador `drm` estão no pacote
+`plymouth` — por isso a lista de pacotes pede **só** `plymouth`, sem
+`plymouth-themes` (que tem apenas temas de exemplo).
+
+**A ordem importa.** O Plymouth segura o DRM até `plymouth-quit.service`. As três units
+de app declaram `After=... plymouth-quit.service`; sem isso os dois podem subir juntos e
+disputar o conector (sintoma: tela preta). Por isso também o `APPEND` do extlinux ganhou
+`splash vt.global_cursor_default=0`.
+
+**Se a tela de boot atrapalhar** (ex.: aparelho que não desenha no DRM), o escape é
+editar `extlinux.conf` no cartão e remover `splash` do `APPEND`: o boot volta ao
+comportamento anterior sem precisar regravar.

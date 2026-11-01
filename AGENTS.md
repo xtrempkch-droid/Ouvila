@@ -1303,3 +1303,35 @@ empurrar qualquer commit para a `main`:
   (2) gerar imagem nova e gravar — **é preciso regravar o cartão**, porque os nomes de
   serviço/arquivo mudaram e não há caminho de atualização in-place; (3) opcionalmente
   renomear `wm_`/`wm.h` num commit isolado, validando com o binário compilado.
+
+### 2026-11-01 (2) — Copilot (tela de boot com o logo + ícone por variante)
+
+- **Pedido:** usar o `docs/logo.jpg` como bootsplash e extrair um ícone separado por
+  projeto (jogos/RetroArch, vídeo/Kodi, música/media-player).
+- **A ordem dos três grupos do logo foi informada pelo dono do projeto, não adivinhada:**
+  esquerda = **música**, centro = **jogos**, direita = **vídeo**. Está no cabeçalho de
+  `tools/branding/gerar-marca.py`; se o logo mudar, informe de novo.
+- **Arte gerada por script** (`tools/branding/gerar-marca.py`, Pillow) e commitada como
+  PNG: 3 ícones 512x512 (`variants/<v>/overlay/usr/share/ouvila/branding/icone.png`) e
+  2 telas de boot (1280x720 e 720x1280).
+- **Por que duas telas de boot:** o Plymouth desenha **antes** da rotação (quem gira é o
+  Weston). X55 é retrato 720x1280, X35 é paisagem 640x480; o tema `.script` escolhe pelo
+  tamanho real da tela e ajusta mantendo proporção.
+- **Fato conferido no pacote, não suposto:** baixei o `plymouth_22.02.122-3_arm64.deb` e
+  vi que `script.so` e `renderers/drm.so` vêm no pacote **principal**, e que
+  `plymouth-start.service` está em `sysinit.target.wants` — então **funciona sem
+  initramfs** (esta imagem não tem initramfs). Por isso a lista pede só `plymouth`;
+  `plymouth-themes` (temas de exemplo) foi descartado.
+- **Armadilha que deixaria tela preta:** Plymouth segura o DRM até `plymouth-quit`. As
+  três units de app ganharam `After=... plymouth-quit.service` e o `APPEND` ganhou
+  `splash vt.global_cursor_default=0`. Escape documentado: remover `splash` do
+  `extlinux.conf` no cartão.
+- **Validado sem hardware:** `Image/Scale/Sprite/SetX/SetY/Window.Get*` conferidos no
+  fonte do Plymouth (não inventei API); escrevi um simulador do subconjunto usado do
+  plymouth-script e rodei a lógica de escala para 4 tamanhos de tela (720x1280, 640x480,
+  1280x720, 480x800) — nenhum estoura e a proporção se mantém; os 27 blocos `run` dos 2
+  workflows passam em `bash -n`; os 22/20/26 pacotes das três listas existem no índice
+  arm64; os caminhos citados (43) existem.
+- **Pendente / próximo:** ver a tela no aparelho (tempo que ela fica visível e se o
+  handoff para o Weston não pisca). Se demorar demais com a splash parada, o ajuste é
+  `ShowDelay`/ordem, não a arte.

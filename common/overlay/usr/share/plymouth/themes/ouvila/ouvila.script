@@ -1,0 +1,41 @@
+/*
+ * Tema de boot do Ouvila: desenha a arte da marca ocupando a tela.
+ *
+ * Duas artes porque o Plymouth desenha ANTES de qualquer rotação — quem gira é o
+ * Weston, depois. O painel da X55 é retrato (720x1280) e o da X35S/X35H é
+ * paisagem (640x480); usar uma arte só deixaria a marca minúscula ou cortada em
+ * um dos aparelhos. O sentido é escolhido pelo tamanho real da tela, não por
+ * nome de aparelho, então qualquer tela nova cai num dos dois casos.
+ *
+ * API conferida no fonte do Plymouth (script-lib-image.script e script-lib-sprite.c):
+ * Image("arquivo"), Image.GetWidth/GetHeight, Image.Scale(w,h), Sprite(imagem),
+ * Sprite.SetX/SetY e Window.GetWidth/GetHeight existem; SetX/SetY são int, então
+ * a divisão que sobra é truncada pelo próprio Plymouth.
+ */
+tela_largura = Window.GetWidth ();
+tela_altura  = Window.GetHeight ();
+
+if (tela_largura > tela_altura)
+    arte = Image ("splash-paisagem.png");
+else
+    arte = Image ("splash-retrato.png");
+
+if (arte)
+  {
+    /* Ajusta ao quadro mantendo a proporção: usa a largura e, se estourar a
+     * altura, passa a mandar a altura. Sem isso a arte seria cortada. */
+    largura = tela_largura;
+    altura  = arte.GetHeight () * largura / arte.GetWidth ();
+
+    if (altura > tela_altura)
+      {
+        altura  = tela_altura;
+        largura = arte.GetWidth () * altura / arte.GetHeight ();
+      }
+
+    arte = arte.Scale (largura, altura);
+
+    marca = Sprite (arte);
+    marca.SetX ((tela_largura - largura) / 2);
+    marca.SetY ((tela_altura  - altura)  / 2);
+  }

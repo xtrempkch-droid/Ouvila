@@ -1,6 +1,9 @@
 [Unit]
 Description=RetroArch (Weston/Wayland) no tty1
-After=systemd-user-sessions.service systemd-udev-settle.service sound.target
+# Ordem com a tela de boot: o Plymouth segura o DRM até plymouth-quit (que roda
+# em multi-user). Sem esta linha os dois podem subir juntos e disputar o
+# conector — o sintoma seria tela preta. After= em unit ausente é inofensivo.
+After=systemd-user-sessions.service systemd-udev-settle.service sound.target plymouth-quit.service
 Conflicts=getty@tty1.service
 StartLimitIntervalSec=300
 StartLimitBurst=3

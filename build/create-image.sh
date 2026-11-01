@@ -295,7 +295,7 @@ if [[ $DEVICE == powkiddy-x35s && $(basename -- "$DTB_FILE") == rocknix-official
 LABEL Mainline (X35S - DTB ROCKNIX)
     KERNEL /Image
     FDT /dtbs/rk3566-powkiddy-x35s-rocknix.dtb
-    APPEND quiet rootwait earlycon=uart8250,mmio32,$EARLYCON console=ttyS2,1500000n8 console=tty1 root=PARTUUID=$ROOT_UUID rw
+    APPEND quiet splash vt.global_cursor_default=0 rootwait earlycon=uart8250,mmio32,$EARLYCON console=ttyS2,1500000n8 console=tty1 root=PARTUUID=$ROOT_UUID rw
 BOOTCFG
 fi
 if [[ $DEVICE == powkiddy-x35s && -f $X35S_DTB ]]; then
@@ -304,7 +304,7 @@ if [[ $DEVICE == powkiddy-x35s && -f $X35S_DTB ]]; then
 LABEL Mainline (X35S - nosso .dtb)
     KERNEL /Image
     FDT /dtbs/rk3566-powkiddy-x35s-nosso.dtb
-    APPEND quiet rootwait earlycon=uart8250,mmio32,$EARLYCON console=ttyS2,1500000n8 console=tty1 root=PARTUUID=$ROOT_UUID rw
+    APPEND quiet splash vt.global_cursor_default=0 rootwait earlycon=uart8250,mmio32,$EARLYCON console=ttyS2,1500000n8 console=tty1 root=PARTUUID=$ROOT_UUID rw
 BOOTCFG
 fi
 
@@ -313,7 +313,7 @@ if [[ -f $BOOT_MOUNT/dtbs/rk3566-powkiddy-x55.dtb ]]; then
 LABEL Mainline (Powkiddy X55)
     KERNEL /Image
     FDT /dtbs/rk3566-powkiddy-x55.dtb
-    APPEND quiet rootwait earlycon=uart8250,mmio32,$EARLYCON console=ttyS2,1500000n8 console=tty1 root=PARTUUID=$ROOT_UUID rw ouvila_x55_gamepad=rocknix-v1
+    APPEND quiet splash vt.global_cursor_default=0 rootwait earlycon=uart8250,mmio32,$EARLYCON console=ttyS2,1500000n8 console=tty1 root=PARTUUID=$ROOT_UUID rw ouvila_x55_gamepad=rocknix-v1
 BOOTCFG
 fi
 
@@ -326,7 +326,7 @@ cat > "$BOOT_MOUNT/extlinux/extlinux.conf" << BOOTCFG
 LABEL $LABEL_NAME
     KERNEL /Image
     FDT $FDT_PATH$OVERLAY_LINE
-    APPEND quiet rootwait earlycon=uart8250,mmio32,$EARLYCON console=ttyS2,1500000n8 console=tty1 root=PARTUUID=$ROOT_UUID rw$BOOT_MARKER
+    APPEND quiet splash vt.global_cursor_default=0 rootwait earlycon=uart8250,mmio32,$EARLYCON console=ttyS2,1500000n8 console=tty1 root=PARTUUID=$ROOT_UUID rw$BOOT_MARKER
 BOOTCFG
 
 cp -a "$ROOTFS_DIR"/. "$ROOT_MOUNT"/
