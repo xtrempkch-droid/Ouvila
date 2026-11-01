@@ -18,6 +18,7 @@ Resumo:
 | --- | --- |
 | Variante **`kodi`** (multimídia) | **pronta e validada** no X55 e X35H — build #120 (~356 MB) |
 | Variante **`retroarch`** (jogos) | **imagem #119 validada no X55 e no X35H**: tela girada, áudio no ALSA, **todos os botões e os 2 analógicos**, sessão estável (X35H: 81 s) |
+| Variante **`media-player`** (mídia) | **v0.4 publicada (~205 MB)**: app de mídia num binário só. X35H: sobe, desenha e toca. v0.3/v0.4 (menu com submenus, biblioteca por álbum, 10 idiomas, 5 temas, equalizador) **só validadas offline** — falta o teste no aparelho |
 | X35H: áudio, vídeo 640x480@58,5 Hz, botões | **confirmados em hardware** |
 | X35H: USB | **falha no controlador**: `dwc3 ... failed to enable ep0out` (só no X35H). DTBs oficiais comparados e idênticos. Falta o teste do pendrive |
 | X35H: Wi-Fi/BT | **não existem** nesta imagem: `mmc3: Failed to initialize a non-removable card` (SDIO do rádio não responde) |
@@ -26,6 +27,10 @@ Resumo:
 **Para gerar a imagem de jogos:** `git tag retroarch-vN && git push origin retroarch-vN`
 (push na `main` gera `kodi`; a tag `retroarch-*` gera `retroarch`). Se falhar, o passo
 **Preflight** diz em segundos qual pacote/arquivo está errado, sem compilar kernel.
+
+**Para gerar a imagem de mídia:** `git tag media-player-vN && git push origin media-player-vN`
+(ou `workflow_dispatch` com `variant=media-player`). Os testes do app rodam **antes** do
+kernel, então um erro de UI/decoder aparece em ~2 min.
 
 **Nunca repita (custou build):**
 1. Validar pacote por `packages.debian.org/<suite>/arm64/<pkg>` — responde **HTTP 200**
