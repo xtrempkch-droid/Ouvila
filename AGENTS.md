@@ -1194,8 +1194,14 @@ outro commit resolve sem force-push na branch. Para conferir se o build nasceu, 
     `tools/test-media-player.sh`.
 - **CI (tag `media-player-v0.3`): todos os passos verdes.** Run `41303887981`: testes do
   app (nativo, no runner), kernel, preflight, rootfs (cross arm64 + qemu) e imagem. A
-  release `media-player-v0.3` saiu com **204,6 MB** — subiu de 177 MB porque agora levam
-  `fonts-noto-core` + `fonts-wqy-zenhei` (~58 MB instalados) e o `libharfbuzz0b`.
+  release saiu com **204,6 MB** — subiu de 177 MB porque agora levam `fonts-noto-core` +
+  `fonts-wqy-zenhei` (~58 MB instalados) e o `libharfbuzz0b`.
+- **Por que existe uma `media-player-v0.4`:** dois ajustes entraram na `main` **depois**
+  do commit que a v0.3 marcou, e a tag é imutável. Em vez de mandar o usuário gravar uma
+  imagem com defeito conhecido (nome e artista do álbum sobrepostos na Biblioteca), a
+  v0.4 marca o mesmo código com os dois ajustes dentro. **Lição:** quando a imagem é o
+  produto, marque a tag **no último commit** — ou valide tudo antes de taguear, porque
+  cada tag custa ~40 min de CI e um release de 200 MB.
 - **Pendente / próximo (precisa da imagem no aparelho):** árabe/hindi/chinês na tela de
   verdade, equalizador audível, Wi-Fi/BT pelo menu na X55 (na X35H devem aparecer como
   "Ausente"), relógio aplicando (`clock_settime` precisa de root — o app roda como root,

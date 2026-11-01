@@ -35,11 +35,18 @@ O que mudou:
 7. **5 temas** (os protótipos de `variants/media-player/layout`) como dados; nenhuma cor
    fixa no código da UI.
 
-**Imagem publicada:** `media-player-v0.3`, **204,6 MB** (cresceu de 177 MB: agora leva
-`fonts-noto-core`, `fonts-wqy-zenhei` e `libharfbuzz0b`). Run `41303887981`, todos os
-passos verdes — inclusive os testes do app no runner e o cross arm64 dentro do rootfs.
-A `main` tem dois ajustes posteriores à tag (guarda do `dsp` com taxa zero e a linha de
-álbum mais alta); eles são cosméticos/defensivos e não mudam o uso normal.
+**Imagem para gravar: `media-player-v0.4`** (204,6 MB — cresceu de 177 MB porque agora
+leva `fonts-noto-core`, `fonts-wqy-zenhei` e `libharfbuzz0b`). Ela é a v0.3 **mais** dois
+ajustes que ficaram de fora daquela tag:
+
+1. **linha de álbum mais alta na Biblioteca** — nome e artista do álbum se sobrepunham
+   na lista (é a tela que o usuário mais vai olhar, então valia uma tag nova);
+2. **guarda no equalizador quando não há taxa de amostragem** (saída de áudio desligada):
+   os coeficientes eram calculados com `rate = 0` e uma banda salva com ganho != 0
+   produziria `NaN` nas amostras.
+
+A v0.3 (`41303887981`) também passou com todos os passos verdes; a v0.4 é a mesma coisa
+com os dois ajustes acima.
 
 **O que testar com a imagem nova (v0.3):**
 
