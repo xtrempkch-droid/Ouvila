@@ -1001,12 +1001,21 @@ outro commit resolve sem force-push na branch. Para conferir se o build nasceu, 
      compilar, dizendo qual pacote instalar. `WM_BASE_INC` permite apontar para
      uma árvore com layout de `/usr` — é como o caso do CI é reproduzido sem
      instalar os `-dev`.
-  8. **`[ -d x ] && algo` dentro de função com `set -e`:** a função devolve o
+  8. **`pkg-config` em cross-compilação.** Ele descreve o **host**: devolve
+     `-I/usr/include/x86_64-linux-gnu`, que vence os cabeçalhos internos do alvo e
+     quebra qualquer include que puxe `<sys/*>`. O sintoma engana: passam os cabeçalhos
+     que o host também tem (`drm.h`, `ft2build.h`) e falham só os que existem no sysroot
+     (`alsa/asoundlib.h`, `libav*/...`). Use pkg-config **apenas** no modo nativo.
+  9. **Diagnóstico que mente:** o teste de cabeçalho do `build/media-player.sh` dizia
+     "não encontrado" para qualquer erro de compilação. Agora ele separa "não achou"
+     (`No such file or directory`) de "achou mas não compila" e imprime as 3 primeiras
+     linhas do compilador — é isso que permite ver mistura de arquiteturas no log.
+  10. **`[ -d x ] && algo` dentro de função com `set -e`:** a função devolve o
      status do teste e o script **morre em silêncio, sem mensagem nenhuma** (foi
      o que aconteceu ao corrigir o item acima: `rc=1` e zero de saída). Use
      `if ...; then ...; fi` dentro de helpers. Mesma família do
      `EXIT_ACTION=$(...)` já documentado.
-  9. **Link arm64 com sysroot baixado à mão:** no Debian o `.so` é *symlink* e o alvo
+  11. **Link arm64 com sysroot baixado à mão:** no Debian o `.so` é *symlink* e o alvo
      só existe no pacote de **runtime** — baixar só os `-dev` passa no `-fsyntax-only`
      e falha em `cannot find -lavformat`. Por isso o sysroot sai de
      `build/media-player-sysroot.sh`, que baixa dev + runtime e **confere cada `-l`**

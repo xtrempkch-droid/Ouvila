@@ -101,8 +101,12 @@ add_inc "$BASE_INC/freetype2"
 add_inc "$BASE_INC/$TRIPLE_FOR_INC"
 
 # pkg-config é a fonte oficial dos caminhos quando os -dev estão instalados
-# (caso do runner). Ele só acrescenta; os diretórios acima cobrem o resto.
-if command -v pkg-config >/dev/null 2>&1; then
+# (caso do runner) — mas SÓ no modo nativo: em cross ele descreve o HOST, e os
+# `-I/usr/include/<triple-do-host>` que ele devolve vencem os cabeçalhos
+# internos do alvo (glibc/asm), quebrando qualquer include que puxe <sys/*>.
+# Foi exatamente o que falhou no CI: só passaram os cabeçalhos que o host também
+# tem (drm.h, ft2build.h) e falharam os que só existem no sysroot.
+if [ "$MODO" = "native" ] && command -v pkg-config >/dev/null 2>&1; then
     if pkg-config --exists libavformat libavcodec libavutil libswscale \
             libswresample alsa freetype2 libdrm 2>/dev/null; then
         for extra in $(pkg-config --cflags libavformat libavcodec libavutil \
@@ -148,16 +152,26 @@ FONTES=(audio.c decoder.c drm.c font.c gfx.c input.c library.c main.c radio.c ui
 # Cada cabeçalho obrigatório é testado isoladamente: se faltar, o erro diz qual
 # pacote instalar em vez de "fatal error" no meio de um arquivo qualquer.
 FALTA_H=0
+ERRO_H=/tmp/wm-hcheck.$$.log
 for h in drm.h xf86drmMode.h ft2build.h alsa/asoundlib.h \
          libavformat/avformat.h libavcodec/avcodec.h \
          libswscale/swscale.h libswresample/swresample.h; do
-    if ! printf '#include <%s>\n' "$h" | "$CC" $SYSROOT_INC -x c -fsyntax-only - 2>/dev/null; then
-        echo "!!! cabecalho nao encontrado: <$h> (faltam os -dev? veja abaixo)" >&2
+    if ! printf '#include <%s>\n' "$h" | "$CC" $SYSROOT_INC -x c -fsyntax-only - >"$ERRO_H" 2>&1; then
+        if grep -q "No such file or directory" "$ERRO_H"; then
+            echo "!!! cabecalho nao encontrado: <$h>" >&2
+        else
+            # Achou o cabeçalho mas não compila: quase sempre é mistura de
+            # cabeçalhos de arquiteturas diferentes. A mensagem do compilador é
+            # a única coisa que permite ver isso no log do CI.
+            echo "!!! <$h> existe mas nao compila:" >&2
+            head -3 "$ERRO_H" | sed 's/^/      /' >&2
+        fi
         FALTA_H=$((FALTA_H+1))
     fi
 done
+rm -f "$ERRO_H"
 if [ "$FALTA_H" -gt 0 ]; then
-    echo "!!! $FALTA_H cabecalho(s) ausente(s). Pacotes: libdrm-dev libfreetype-dev" >&2
+    echo "!!! $FALTA_H cabecalho(s) com problema. Pacotes: libdrm-dev libfreetype-dev" >&2
     echo "!!! libasound2-dev libavformat-dev libavcodec-dev libavutil-dev" >&2
     echo "!!! libswscale-dev libswresample-dev" >&2
     echo "!!! flags usadas: $SYSROOT_INC" >&2

@@ -162,6 +162,11 @@ alvo só está no pacote de **runtime**: baixar apenas os `-dev` resolve os cabe
 quebra no link (`cannot find -lavformat`). O script baixa os dois e confere cada `-l`
 (symlink **e** alvo) antes de compilar — falha em segundos em vez de em 40 minutos.
 
+Em cross-compilação o script **não** usa `pkg-config`: ele descreve o host e os
+`-I/usr/include/<triple-do-host>` que devolve vencem os cabeçalhos internos do alvo
+(glibc/asm). O sintoma engana — passam os cabeçalhos que o host também tem e falham só
+os do sysroot.
+
 Os caminhos de cabeçalho também não são óbvios: `libdrm-dev` põe `drm.h` em
 `/usr/include/libdrm`, `libfreetype-dev` em `/usr/include/freetype2` e o FFmpeg do
 Ubuntu em `/usr/include/<triple>/`. O script descobre os três (e usa `pkg-config`
