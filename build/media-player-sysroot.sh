@@ -33,19 +33,20 @@ MIRROR=${WM_MIRROR:-http://deb.debian.org/debian}
 ARCH=${WM_ARCH:-arm64}
 TRIPLE=aarch64-linux-gnu
 
-# Cabeçalhos (-dev) e bibliotecas de link (runtime). O runtime é obrigatório:
-# ver o comentário do topo.
+# Pacotes pedidos explicitamente. O resto vem da CLOSURA de dependências: os
+# `.so` do bookworm referenciam libaom3, libva2, libssh-gcrypt-4, libspeex1 e
+# outras, e o ld falha com "referência não definida para ..." se elas não
+# estiverem no sysroot — mesmo o código não usando essas funções diretamente.
+# (Isso acontece porque o linker resolve os símbolos das bibliotecas
+# compartilhadas que ele carrega.) Baixar a closura é o que torna o link um
+# teste de verdade em vez de um falso positivo.
 DEV=(
     libavformat-dev libavcodec-dev libavutil-dev libswscale-dev libswresample-dev
     libdrm-dev libasound2-dev libfreetype-dev
 )
-# Dependências de cabeçalho que os -dev acima incluem e que não vêm no runner.
-EXTRA_DEV=(
-    libpng-dev zlib1g-dev libbrotli-dev libpciaccess-dev libexpat1-dev
-)
 RUNTIME=(
     libavformat59 libavcodec59 libavutil57 libswscale6 libswresample4
-    libdrm2 libasound2 libfreetype6 libpng16-16 zlib1g
+    libdrm2 libasound2 libfreetype6
 )
 
 mkdir -p "$DESTINO"
@@ -55,6 +56,15 @@ mkdir -p "$CACHE"
 echo "--> baixando o índice $SUITE/$ARCH"
 curl -fsSL "$MIRROR/dists/$SUITE/main/binary-$ARCH/Packages.gz" -o "$CACHE/Packages.gz"
 gzip -dc "$CACHE/Packages.gz" > "$CACHE/Packages.txt"
+
+# Pacotes da closura que NÃO devem ser extraídos: glibc e cabeçalhos de kernel
+# do ALVO. O compilador cruzado já traz os dele; extrair estes faz
+# /usr/include/stdio.h (do alvo) vencer o do toolchain e a mistura de versões
+# quebra a compilação ("L_tmpnam undeclared", "bits/errno.h"...). O link do
+# libc também é do toolchain — ver a limpeza dos ld scripts mais abaixo.
+PULAR=" libc6 libc6-dev libc6-dev-arm64-cross linux-libc-dev \
+        linux-libc-dev-arm64-cross libcrypt-dev libcrypt1 libnsl-dev \
+        libnsl2 rpcsvc-proto debconf debconf-i18n shared-mime-info "
 
 baixar() {
     local p=$1 url
@@ -71,19 +81,70 @@ baixar() {
     if [ ! -f "$deb" ]; then
         curl -fsSL -o "$deb" "$MIRROR/$url"
     fi
+    case "$PULAR" in
+        *" $p "*)
+            # Baixado (para a closura continuar sendo resolvida), mas não
+            # extraído — ver o comentário de PULAR.
+            return 0
+            ;;
+    esac
     dpkg-deb -x "$deb" "$DESTINO"
-    echo "    $p"
 }
 
-echo "--> cabeçalhos (-dev)"
-for p in "${DEV[@]}" "${EXTRA_DEV[@]}"; do
-    baixar "$p"
+# Mapa pacote -> Depends, para resolver a closura sem chamar o apt.
+awk 'BEGIN { RS=""; FS="\n" }
+     { pkg=""; dep="";
+       for (i=1;i<=NF;i++) {
+         if ($i ~ /^Package: /) { pkg=substr($i,10) }
+         else if ($i ~ /^Depends: /) { dep=substr($i,10) }
+       }
+       if (pkg != "") printf "%s\t%s\n", pkg, dep }' \
+    "$CACHE/Packages.txt" > "$CACHE/deps.txt"
+
+# Nome do primeiro pacote de cada alternativa, sem versão/arquitetura.
+sem_resto() {
+    printf '%s\n' "$1" \
+        | sed -e 's/|.*//' -e 's/([^)]*)//g' -e 's/\[[^]]*\]//g' \
+              -e 's/<[^>]*>//g' -e 's/:any//g' -e 's/[[:space:]]//g'
+}
+
+echo "--> resolvendo a closura de dependências"
+declare -A VISTO=()
+FILA=("${DEV[@]}" "${RUNTIME[@]}")
+FALTANDO=0
+while [ ${#FILA[@]} -gt 0 ]; do
+    p=${FILA[0]}
+    FILA=("${FILA[@]:1}")
+    p=$(sem_resto "$p")
+    if [ -z "$p" ] || [ -n "${VISTO[$p]:-}" ]; then
+        continue
+    fi
+    VISTO[$p]=1
+
+    if ! grep -q "^Package: $p$" "$CACHE/Packages.txt"; then
+        # Pacote virtual (Provides) ou de outra seção: não é erro, só não entra.
+        continue
+    fi
+    baixar "$p" >/dev/null || FALTANDO=$((FALTANDO+1))
+
+    # `|| true`: com set -e, um grep sem resultado (pacote sem Depends, caso de
+    # libc6) derrubaria o script em silêncio. Também não usar `grep -P`: nem todo
+    # grep tem PCRE.
+    deps=$(awk -v alvo="$p" -F'\t' '$1 == alvo { print $2; exit }' "$CACHE/deps.txt" || true)
+    if [ -z "$deps" ]; then
+        continue
+    fi
+    IFS=',' read -ra PARTES <<< "$deps"
+    for item in "${PARTES[@]}"; do
+        FILA+=("$item")
+    done
 done
 
-echo "--> bibliotecas para o link (runtime)"
-for p in "${RUNTIME[@]}"; do
-    baixar "$p"
-done
+if [ "$FALTANDO" -gt 0 ]; then
+    echo "!!! $FALTANDO pacote(s) da closura nao puderam ser baixados" >&2
+    exit 1
+fi
+echo "    ${#VISTO[@]} pacotes na closura"
 
 echo "--> conferindo cabeçalhos obrigatórios"
 for h in \
@@ -96,6 +157,21 @@ do
         echo "!!! cabeçalho ausente no sysroot: $h" >&2
         exit 1
     fi
+done
+
+# O glibc do alvo NÃO pode ficar neste diretório: o `libc.so` de lá é um ld
+# script com caminhos ABSOLUTOS (/lib/aarch64-linux-gnu/libc.so.6), e como os
+# `-L` do sysroot vêm antes dos diretórios do cross-compiler, o ld pegaria esse
+# script e falharia com "não foi possível localizar /lib/aarch64-linux-gnu/...".
+# glibc e o loader corretos são os do próprio cross-compiler; aqui só precisamos
+# das bibliotecas da aplicação (FFmpeg, ALSA, FreeType, libdrm).
+for libdir in "$DESTINO"/usr/lib/aarch64-linux-gnu "$DESTINO"/lib/aarch64-linux-gnu; do
+    [ -d "$libdir" ] || continue
+    rm -f "$libdir"/libc.so "$libdir"/libc_nonshared.a \
+          "$libdir"/libm.so "$libdir"/libdl.so "$libdir"/libpthread.so \
+          "$libdir"/librt.so "$libdir"/libresolv.so "$libdir"/libutil.so \
+          "$libdir"/libanl.so "$libdir"/libmvec.so \
+          "$libdir"/ld-linux-aarch64.so.1 "$libdir"/ld-2.*.so
 done
 
 # Cada -l do build precisa de um .so (symlink do -dev) cujo ALVO exista.

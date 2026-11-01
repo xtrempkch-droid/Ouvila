@@ -157,6 +157,18 @@ build/media-player.sh --native                  # binário para a máquina local
 tools/test-media-player.sh                      # biblioteca, abas, decoder e launcher
 ```
 
+O script resolve a **closura de dependências** do índice (169 pacotes no bookworm hoje):
+os `.so` referenciam `libaom3`, `libva2`, `libssh-gcrypt-4`, `libspeex1`..., e sem elas o
+link para em "referência não definida" mesmo o nosso código não usando essas funções.
+Três detalhes que só aparecem em cross-compilação:
+
+1. o **glibc do alvo não entra** no sysroot — os cabeçalhos dele vencem os do
+   cross-compiler e quebram com `L_tmpnam` não declarado (o script baixa e não extrai);
+2. os **ld scripts do glibc** (`libc.so` → `/lib/aarch64-linux-gnu/libc.so.6`) são
+   removidos, porque os `-L` do sysroot vêm antes dos diretórios do toolchain;
+3. o link usa `-Wl,-rpath-link` e também `<sysroot>/lib/aarch64-linux-gnu`, porque
+   `dpkg-deb -x` não aplica o usrmerge (zlib/libselinux ficam em `/lib`).
+
 O `media-player-sysroot.sh` existe porque no Debian o arquivo `.so` é um *symlink* e o
 alvo só está no pacote de **runtime**: baixar apenas os `-dev` resolve os cabeçalhos e
 quebra no link (`cannot find -lavformat`). O script baixa os dois e confere cada `-l`

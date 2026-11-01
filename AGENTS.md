@@ -1015,7 +1015,23 @@ outro commit resolve sem force-push na branch. Para conferir se o build nasceu, 
      o que aconteceu ao corrigir o item acima: `rc=1` e zero de saída). Use
      `if ...; then ...; fi` dentro de helpers. Mesma família do
      `EXIT_ACTION=$(...)` já documentado.
-  11. **Link arm64 com sysroot baixado à mão:** no Debian o `.so` é *symlink* e o alvo
+  11. **Cross-compilar contra o sysroot do bookworm — quatro coisas que só aparecem no CI:**
+      a) **closura de dependências**: os `.so` do bookworm referenciam `libaom3`, `libva2`,
+         `libssh-gcrypt-4`, `libspeex1`...; sem elas o link para em "referência não
+         definida". O `media-player-sysroot.sh` resolve a closura pelo índice (169
+         pacotes, ~200 MB) em vez de listar nomes à mão;
+      b) **glibc do alvo não entra**: `libc6-dev` arm64 traz `usr/include/stdio.h`, que
+         vence o do cross-compiler e quebra com `L_tmpnam` não declarado. O script
+         baixa mas **não extrai** glibc/kernel headers (`PULAR`);
+      c) **ld script do glibc**: `<sysroot>/usr/lib/*/libc.so` aponta para
+         `/lib/aarch64-linux-gnu/libc.so.6` (caminho absoluto) e, como os `-L` do
+         sysroot vêm antes dos do toolchain, o ld pega esse script e falha. O script
+         remove `libc.so`, `libm.so`, `libpthread.so`, `ld-linux*.so` do sysroot;
+      d) **`-rpath-link` e o `/lib` do usrmerge**: `-L` só acha a biblioteca pedida;
+         as `DT_NEEDED` precisam de `-Wl,-rpath-link`. E `dpkg-deb -x` **não** aplica
+         o usrmerge: `zlib1g`/`libselinux` caem em `<sysroot>/lib/aarch64-linux-gnu`,
+         não em `usr/lib` — sem esse caminho o link falha em `gztell`/`getfilecon`.
+  12. **Link arm64 com sysroot baixado à mão:** no Debian o `.so` é *symlink* e o alvo
      só existe no pacote de **runtime** — baixar só os `-dev` passa no `-fsyntax-only`
      e falha em `cannot find -lavformat`. Por isso o sysroot sai de
      `build/media-player-sysroot.sh`, que baixa dev + runtime e **confere cada `-l`**

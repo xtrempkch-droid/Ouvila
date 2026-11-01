@@ -140,7 +140,27 @@ if [ "$MODO" = "native" ]; then
         fi
     fi
 elif [ -n "${WM_SYSROOT:-}" ]; then
-    LINK=(-L"$WM_SYSROOT/usr/lib/aarch64-linux-gnu" -L"$WM_SYSROOT/usr/lib" "${LINK[@]}")
+    # -L só acha a biblioteca que a gente pede (-lasound). As dependências
+    # internas delas (DT_NEEDED: libva, libssh, libpng, libspeex...) só são
+    # procuradas nos caminhos do -rpath-link. Sem isso o link para em
+    # "referência não definida para vaCreateSurfaces@VA_API_0.33.0".
+    # ATENÇÃO ao /lib: usrmerge só vale no sistema instalado. Ao extrair os
+    # .deb com dpkg-deb -x, `dpkg -L zlib1g` diz /usr/lib/… mas o arquivo real é
+    # gravado em <sysroot>/lib/aarch64-linux-gnu — sem esse caminho, o link falha
+    # em "referência não definida para gztell" (zlib) e getfilecon (libselinux).
+    LINK=(-L"$WM_SYSROOT/usr/lib/aarch64-linux-gnu" -L"$WM_SYSROOT/usr/lib"
+          -L"$WM_SYSROOT/lib/aarch64-linux-gnu" -L"$WM_SYSROOT/lib"
+          -Wl,-rpath-link,"$WM_SYSROOT/usr/lib/aarch64-linux-gnu"
+          -Wl,-rpath-link,"$WM_SYSROOT/usr/lib"
+          -Wl,-rpath-link,"$WM_SYSROOT/lib/aarch64-linux-gnu"
+          -Wl,-rpath-link,"$WM_SYSROOT/lib"
+          "${LINK[@]}")
+fi
+
+# Flags extra de link (usado nos testes e para casos específicos de toolchain).
+if [ -n "${WM_LDFLAGS:-}" ]; then
+    # shellcheck disable=SC2206  # divisão por espaço é intencional aqui
+    LINK+=(${WM_LDFLAGS})
 fi
 
 # Os mesmos avisos do kernel: -Werror não é usado porque um aviso de nova versão
