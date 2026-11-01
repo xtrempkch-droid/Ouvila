@@ -151,10 +151,16 @@ O brilho também é ajustável pela aba Sistema (◀ ▶), gravando em
 ### Testes sem o aparelho
 
 ```sh
-build/media-player.sh --check      # compila contra os cabeçalhos do bookworm arm64
-build/media-player.sh --native     # binário para a máquina local
-tools/test-media-player.sh         # biblioteca, abas, decoder e launcher
+build/media-player-sysroot.sh /tmp/wm-sysroot   # cabeçalhos + libs do bookworm arm64
+WM_SYSROOT=/tmp/wm-sysroot build/media-player.sh --check   # compila contra eles
+build/media-player.sh --native                  # binário para a máquina local
+tools/test-media-player.sh                      # biblioteca, abas, decoder e launcher
 ```
+
+O `media-player-sysroot.sh` existe porque no Debian o arquivo `.so` é um *symlink* e o
+alvo só está no pacote de **runtime**: baixar apenas os `-dev` resolve os cabeçalhos e
+quebra no link (`cannot find -lavformat`). O script baixa os dois e confere cada `-l`
+(symlink **e** alvo) antes de compilar — falha em segundos em vez de em 40 minutos.
 
 O binário tem modos que existem só para isso:
 

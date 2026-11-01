@@ -1040,26 +1040,14 @@ jobs:
           echo "--> ok: bibliotecas e fonte presentes"
 
           echo "--> [media-player] Compilando o app (cross arm64, headers do bookworm)..."
-          echo "--> Os cabecalhos vem dos pacotes arm64 do proprio bookworm: e o"
+          echo "--> Os cabeçalhos vem dos pacotes arm64 do proprio bookworm: e o"
           echo "--> que garante que o codigo compila contra o FFmpeg 5.1 da imagem"
-          echo "--> (e nao contra a versao do runner)."
+          echo "--> (e nao contra a versao do runner). O script tambem confere que"
+          echo "--> cada -l tem biblioteca de verdade (nao só o symlink do -dev)."
           SYSROOT=/tmp/wm-sysroot
           rm -rf "$SYSROOT"
-          mkdir -p "$SYSROOT"
-          curl -fsSL http://deb.debian.org/debian/dists/bookworm/main/binary-arm64/Packages.gz \
-            -o /tmp/wm-pkgs.gz
-          gzip -dc /tmp/wm-pkgs.gz > /tmp/wm-pkgs.txt
-          for p in libavformat-dev libavcodec-dev libavutil-dev libswscale-dev \
-                   libswresample-dev libdrm-dev libasound2-dev libfreetype-dev; do
-            url=$(grep -A 30 "^Package: $p$" /tmp/wm-pkgs.txt \
-                    | sed -n 's/^Filename: //p' | head -1)
-            if [ -z "$url" ]; then
-              echo "!!! $p nao encontrado no indice arm64 do bookworm" >&2
-              exit 1
-            fi
-            curl -fsSL -o "/tmp/$(basename "$url")" "http://deb.debian.org/debian/$url"
-            dpkg-deb -x "/tmp/$(basename "$url")" "$SYSROOT"
-          done
+          chmod +x build/media-player-sysroot.sh
+          ./build/media-player-sysroot.sh "$SYSROOT"
           WM_SYSROOT="$SYSROOT" WM_OUT=build/walkmam-media ./build/media-player.sh
 
           echo "--> [media-player] Instalando o binario e o launcher..."

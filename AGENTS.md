@@ -992,6 +992,12 @@ outro commit resolve sem force-push na branch. Para conferir se o build nasceu, 
      (meu fixture de teste estava errado, não o parser).
   6. `TRIP`/`&` em `snprintf` com tamanho estimado gera `-Wformat-truncation`; use
      `%.*s`.
+  7. **Link arm64 com sysroot baixado à mão:** no Debian o `.so` é *symlink* e o alvo
+     só existe no pacote de **runtime** — baixar só os `-dev` passa no `-fsyntax-only`
+     e falha em `cannot find -lavformat`. Por isso o sysroot sai de
+     `build/media-player-sysroot.sh`, que baixa dev + runtime e **confere cada `-l`**
+     (symlink e alvo) antes de compilar. Esse check roda em ~1 s e é o que evita um
+     build de 40 min morrer no link.
 - **Pendente / próximo (nada disso rodou no aparelho):**
   1. **DRM/KMS**: confirmar que o page flip funciona e que o `fbcon` não desenha por
      cima (o app pede `KD_GRAPHICS`; se piscar, olhar `/boot/media-player.log`).
