@@ -987,6 +987,9 @@ static void desenhar_biblioteca(Ui *u, Layout l)
     Rect esq = { area.x, area.y, area.w * 46 / 100, area.h };
     Rect dir = { area.x + esq.w + l.gap, area.y, area.w - esq.w - l.gap, area.h };
     int linha_h = l.altura_linha - 4;
+    /* O álbum ocupa DUAS linhas de texto (nome e artista), então a linha dele é
+     * mais alta — com a altura das faixas o artista invadia a linha de baixo. */
+    int linha_alb = l.altura_linha + 6;
     int y;
     char buf[192];
 
@@ -1007,7 +1010,7 @@ static void desenhar_biblioteca(Ui *u, Layout l)
 
     /* Lista de álbuns, com o cursor sempre visível. */
     {
-        int linhas = (esq.h - 34) / linha_h;
+        int linhas = (esq.h - 34) / linha_alb;
 
         if (u->bib_album < u->bib_topo) {
             u->bib_topo = u->bib_album;
@@ -1020,7 +1023,7 @@ static void desenhar_biblioteca(Ui *u, Layout l)
             int album = u->bib_topo + i;
             char nome[96], artista[96];
             int faixas = 0;
-            Rect r = { esq.x + 8, y, esq.w - 16, linha_h };
+            Rect r = { esq.x + 8, y, esq.w - 16, linha_alb - 4 };
             bool sel = (album == u->bib_album);
 
             if (album >= u->n_albuns || !album_info(u, album, nome, sizeof(nome),
@@ -1035,15 +1038,15 @@ static void desenhar_biblioteca(Ui *u, Layout l)
                 texto_limitado(c, u->f_pequeno, r.x + 10, r.y + r.h / 2 + 5,
                                COR_TEXTO, nome, r.w - 60);
             } else {
-                texto_limitado(c, u->f_pequeno, r.x + 10, r.y + r.h / 2 - 2,
-                               sel ? COR_TEXTO : COR_TEXTO, nome, r.w - 20);
-                texto_limitado(c, u->f_pequeno, r.x + 10, r.y + r.h / 2 + 12,
+                texto_limitado(c, u->f_pequeno, r.x + 10, r.y + 13,
+                               COR_TEXTO, nome, r.w - 60);
+                texto_limitado(c, u->f_pequeno, r.x + 10, r.y + r.h - 3,
                                COR_MUTED, artista, r.w - 60);
             }
             snprintf(buf, sizeof(buf), "%d", faixas);
             texto(c, u->f_pequeno, r.x + r.w - largura_texto(u->f_pequeno, buf) - 8,
                   r.y + r.h / 2 + 5, COR_MUTED, buf);
-            y += linha_h;
+            y += linha_alb;
         }
     }
 
