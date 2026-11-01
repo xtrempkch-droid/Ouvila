@@ -46,7 +46,8 @@ ajustes que ficaram de fora daquela tag:
    produziria `NaN` nas amostras.
 
 A v0.3 (`41303887981`) também passou com todos os passos verdes; a v0.4 é a mesma coisa
-com os dois ajustes acima.
+com os dois ajustes acima — run `41306623069`, **todos os passos verdes**, release
+publicada em 2026-11-01.
 
 **O que testar com a imagem nova (v0.3):**
 

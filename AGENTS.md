@@ -1197,7 +1197,8 @@ outro commit resolve sem force-push na branch. Para conferir se o build nasceu, 
     host) — na máquina do CI as dependências vêm todas do apt e são consistentes;
   - YAML do workflow parseado (`yaml.safe_load`) e `bash -n` no
     `tools/test-media-player.sh`.
-- **CI (tag `media-player-v0.3`): todos os passos verdes.** Run `41303887981`: testes do
+- **CI: `media-player-v0.3` (`41303887981`) e `media-player-v0.4` (`41306623069`) ambas
+  com todos os passos verdes** — v0.4 é a imagem para gravar.: testes do
   app (nativo, no runner), kernel, preflight, rootfs (cross arm64 + qemu) e imagem. A
   release saiu com **204,6 MB** — subiu de 177 MB porque agora levam `fonts-noto-core` +
   `fonts-wqy-zenhei` (~58 MB instalados) e o `libharfbuzz0b`.
