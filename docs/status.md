@@ -169,7 +169,17 @@ Três armadilhas que essa comparação revelou (e que estão documentadas em
    CI chamar `build/create-image.sh`, mover scripts compartilhados de
    `variants/kodi/overlay/` para `common/overlay/`.
 
-### As duas imagens (ambas `success`)
+### Tela de boot
+
+A imagem liga com o **logo do Ouvila** na tela (Plymouth, tema `ouvila`), em vez de
+texto do kernel. A arte tem versão paisagem e retrato e o tema escolhe pelo tamanho real
+da tela (o Plymouth desenha antes da rotação do Weston). Detalhes e o escape (remover
+`splash` do `extlinux.conf`) em [variantes.md](variantes.md#tela-de-boot-plymouth-e-ícone-de-cada-variante).
+
+**Ainda não visto no aparelho** — o primeiro teste precisa confirmar quanto tempo a
+splash fica na tela e se a troca para o app não pisca.
+
+### As imagens
 
 | Variante | Build | Artefato | Tamanho | Estado |
 | --- | --- | --- | --- | --- |

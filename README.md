@@ -1,5 +1,7 @@
 # Ouvila
 
+<img src="docs/logo.jpg" alt="Ouvila" width="360">
+
 Sistema Linux para media players RK3566, com foco inicial nos handhelds Powkiddy X55, X35S e X35H.
 
 > **Status (2026-10-25):** três variantes compilando; duas testadas em hardware.
