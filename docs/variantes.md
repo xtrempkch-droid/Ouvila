@@ -12,7 +12,7 @@ diferença é o que entra no rootfs e qual serviço toma o `tty1` no boot.
 | Artefato | `rk3566-x55-mainline-sdcard-image` | `rk3566-x55-retroarch-sdcard-image` | `rk3566-x55-media-player-sdcard-image` |
 | Add-on de rádio no app | `script.walkmam.radio` | — (painel web) | aba **Rádio** dentro do app |
 | Cores | — | NES, SNES, GB/GBC, GBA, PC Engine, PS1 | — |
-| Status | validado no X55 e X35H | build #116 verde; hardware parcial | **nada testado em hardware ainda** |
+| Status | validado no X55 e X35H | build #116 verde; hardware parcial | **X35H: app sobe, desenha e toca; correções de controle na v0.2** |
 
 O que é **igual** nas três: kernel, U-Boot, DTBs (X55 + X35S/X35H), rotação
 (`display_transform`), rede USB (`g_ether`, 10.55.0.1), SSH `root/root`, painel web de
@@ -97,7 +97,13 @@ garante compatibilidade com o FFmpeg 5.1 da imagem).
 | **Música** | capa do álbum (`folder.jpg`/`cover.png`), título/artista/álbum, barra de progresso, controles e a biblioteca |
 | **Vídeos** | grade da biblioteca; ao escolher, reproduz **em tela cheia** com OSD (progresso e dicas) |
 | **Rádio** | Wi-Fi (scan/conectar com teclado na tela) e Bluetooth, lendo o estado do kernel |
-| **Sistema** | modelo, bateria, armazenamento, brilho, desligar/reiniciar |
+| **Sistema** | **só informação**: modelo, bateria, armazenamento, brilho atual. Nada de configuração aqui — ver abaixo |
+
+Na aba Sistema não se configura nada de propósito: ali ficam apenas os dados do
+aparelho, e o botão de volume do hardware não corre o risco de mexer no brilho (foi um
+bug no aparelho). Tudo o que é ajuste mora no **menu de configurações**, aberto com
+**SELECT** em qualquer aba: brilho (◀ ▶, com piso de 10%), apagar a tela, desligar,
+reiniciar e fechar.
 
 ### Controles
 
@@ -106,13 +112,35 @@ Não há tela sensível ao toque nesses aparelhos, então tudo é navegável pel
 | Botão | Ação |
 | --- | --- |
 | **A** (`BTN_EAST`) / Enter | abre/confirma |
-| **B** (`BTN_SOUTH`) / Esc | volta (na tela cheia, sai do vídeo) |
+| **B** (`BTN_SOUTH`) / Esc | volta (na tela cheia, sai do vídeo; no menu, fecha) |
 | **X** (`BTN_NORTH`) / Espaço | tocar/pausar |
-| **Y** (`BTN_WEST`) / F1 | menu (buscar redes / desligar) |
+| **Y** (`BTN_WEST`) / F1 | menu (no rádio, buscar redes) |
+| **SELECT** (`BTN_SELECT`) | abre o **menu de configurações** em qualquer aba |
 | **L / R** (`BTN_TL`/`BTN_TR`) | troca de aba |
-| **L2 / R2** | volume |
+| **L1 / R1** (`BTN_TL2`/`BTN_TR2`) | música: faixa anterior/próxima; vídeo: −30 s/+30 s; grade: pula uma página |
 | **D-pad / analógico esquerdo** | navegação (segurar repete) |
 | **◀ ▶ na tela cheia** | −10 s / +10 s |
+| **Volume do aparelho** (`gpio-keys-vol`) | volume, em qualquer tela — só volume |
+
+### Botão de power
+
+O power (`rk805 pwrkey`, `/dev/input/event0`) é o liga/desliga da interface:
+
+| Gesto | O que acontece |
+| --- | --- |
+| toque curto | **apaga a tela** (DPMS off — é o que economiza bateria de verdade) |
+| qualquer tecla com a tela apagada | acende de novo, sem perder o que estava tocando |
+| 3 s segurando | abre o diálogo **Desligar?** (◀ ▶ escolhe, A confirma, B cancela) |
+| sair do app com a tela apagada | o painel é religado antes de encerrar |
+
+Para isso o logind **não** pode tratar a tecla: o drop-in
+`/etc/systemd/logind.conf.d/10-walkmam-media-power.conf` põe
+`HandlePowerKey=ignore` (o padrão do systemd desligaria o aparelho no toque, antes do
+app ver a tecla).
+
+O **brilho tem piso de 10%** (`WM_BRILHO_MIN`): abaixo disso o painel fica ilegível e
+parece que o aparelho travou. Para economizar bateria existe o "apagar a tela", que põe
+o painel em DPMS off — baixar o backlight sozinho economiza muito menos.
 
 Os códigos são os do `rocknix-joypad` confirmados em
 [hardware-e-drivers.md §3.2.1](hardware-e-drivers.md) — o mesmo mapa que o perfil
@@ -145,8 +173,8 @@ lidos direto do arquivo. Sem tag, `Artista - Título.ext` vira artista/título.
 | `media_roots` | pastas de mídia, separadas por `:` |
 | `media_exit` | `poweroff` (padrão) ou `stay` ao fechar a UI |
 
-O brilho também é ajustável pela aba Sistema (◀ ▶), gravando em
-`/sys/class/backlight/*/brightness`.
+O brilho é ajustado no **menu (SELECT) → Brilho** com ◀ ▶, gravando em
+`/sys/class/backlight/*/brightness` e respeitando o piso de 10%.
 
 ### Testes sem o aparelho
 
@@ -194,34 +222,59 @@ O binário tem modos que existem só para isso:
 
 ```sh
 walkmam-media --screenshot tela.ppm --tab videos      # desenha uma aba e grava
+walkmam-media --screenshot menu.ppm --menu            # com o menu de configurações aberto
 walkmam-media --selftest                              # exercita a navegação
 walkmam-media --scan                                  # lista a biblioteca
 walkmam-media --play filme.mkv --frame-out q.ppm      # decodifica e grava um quadro
 ```
 
 O `--selftest` é o que pega regressão de navegação: ele manda teclas sintéticas
-(OK, L/R, setas, volume, B) e confere o que a UI publica — não substitui o teste no
-aparelho, mas evita descobrir no cartão que a lista parou de responder.
+(OK, L/R, setas, volume, B, power, SELECT, L1/R1) e confere o que a UI publica —
+não substitui o teste no aparelho, mas evita descobrir no cartão que a lista parou de
+responder. São **21 casos** e o script exige 20+ (um selftest que aborta cedo — biblioteca
+vazia, por exemplo — não pode "passar").
 
 No CI, a variante roda `tools/test-media-player.sh` **antes** de compilar o kernel
 (binário nativo, ~2 min) e, no passo do rootfs, executa o binário **arm64** com qemu
 (`--version`) para provar que as bibliotecas resolvem.
 
-### O que ainda não foi validado
+### O que já foi validado no aparelho (e o que não foi)
 
-Nada disso rodou no aparelho. Em particular:
+**Confirmado na X35H (2026-11-01, imagem `media-player-v0.1`):** o app sobe pelo
+`media-player.service`, o **DRM/KMS desenha em tela cheia** (painel 640x480,
+`transform normal`), o **ALSA toca** (o usuário ouviu a música no aparelho) e a
+navegação pelas abas responde. A biblioteca leu as faixas do cartão.
 
-1. **DRM/KMS na X55/X35H**: o app pega o master do KMS e faz page flip. Se o `fbcon`
-   estiver desenhando no mesmo CRTC, a tela pisca — o app já pede `KD_GRAPHICS` no
-   tty0, mas isso precisa de confirmação no hardware.
-2. **Desempenho de vídeo**: o RK3566 mainline não tem decode de vídeo por hardware, então
+**Corrigido a partir desse teste** (é o que a próxima imagem leva):
+
+1. **nada avançava ao fim da faixa** — o log mostrava "terminou (interrompido)" a cada
+   1-2 s: o app fechava o player e ficava em silêncio. Agora, ao terminar uma música ele
+   abre a próxima da lista; no vídeo, volta para a grade em vez de emendar outro.
+2. **ligar/desligar estava na aba Sistema**, onde o botão de volume se confundia com o
+   brilho. Agora: power curto apaga/acende a tela, 3 s abre a confirmação de desligar, e
+   a aba Sistema virou **só informação** (configuração toda no menu de SELECT).
+3. **brilho sem piso** — agora para em 10% e existe "apagar a tela" (DPMS off), que é o
+   que economiza bateria.
+4. **L1/R1 sem função** — agora saltam faixa (música), página (grade) e ±30 s (vídeo).
+
+**Ainda não validado em hardware** (o teste acima foi antes destas mudanças):
+
+1. o **power** de verdade: o drop-in do logind
+   (`HandlePowerKey=ignore`) só existe na imagem nova; sem ele o systemd desliga o
+   aparelho no toque curto.
+2. **DPMS off/on** no painel da X55/X35H (o app usa a propriedade `DPMS` do conector).
+3. **vídeo em tela cheia**: o RK3566 mainline não tem decode de vídeo por hardware, então
    720p é decodificado em software. 640x480/720x480 deve ir bem; 720p60 provavelmente
-   não.
-3. **Áudio**: o ALSA abre `default` e o mixer é ajustado pelo controle `Playback Volume`.
-   O mux do codec precisa continuar em `HP` (ver AGENTS.md §4.2.1).
-4. **Gamepad**: o mapa usa os códigos do DTS; os nomes dos eixos (`ABS_X`/`ABS_Y`) são
+   não. Só o decodificador offline foi testado (quadro sai com conteúdo).
+4. **desempenho de música**: abrir a próxima faixa a cada fim recria o pipeline do
+   FFmpeg — se aparecer um intervalo audível entre faixas, o próximo passo é manter um
+   leitor pronto (gapless).
+5. **Gamepad**: o mapa usa os códigos do DTS; os nomes dos eixos (`ABS_X`/`ABS_Y`) são
    os do `rocknix-joypad`, mas a zona morta foi escolhida por cálculo (0..1023, centro
    512), não medida.
+
+Sempre que algo falhar, o motivo fica em **`/boot/media-player.log`** (é o primeiro
+lugar a olhar).
 
 ## Onde ficam ROMs, saves e BIOS
 

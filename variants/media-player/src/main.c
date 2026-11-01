@@ -32,6 +32,8 @@
 #include <unistd.h>
 
 static volatile sig_atomic_t g_sair;
+/* Brilho a restaurar quando a tela foi "apagada" sem DPMS (fallback). 0 = nada. */
+static int brilho_fallback;
 static volatile sig_atomic_t g_recarregar;
 
 static void ao_sinal(int sig)
@@ -155,8 +157,11 @@ static bool gravar_brilho(int valor)
         NULL
     };
 
-    if (valor < 1) {
-        valor = 1;
+    /* Piso de 10%: abaixo disso o painel fica ilegível e não economiza de
+     * verdade — para isso existe "apagar a tela" (DPMS). A UI já limita, mas o
+     * backend não pode confiar só nela (e há também o write direto no /sys). */
+    if (valor < WM_BRILHO_MIN) {
+        valor = WM_BRILHO_MIN;
     }
     if (valor > 100) {
         valor = 100;
@@ -293,6 +298,7 @@ static void uso(void)
            "  --list-devices         lista gamepads/teclados e sai\n"
            "  --scan                 varre a biblioteca e lista os arquivos\n"
            "  --selftest             exercita a navegacao/estado da UI e sai\n"
+           "  --menu                 com --screenshot: abre o menu de configuracoes\n"
            "  --config ARQ           caminho de walkmam.conf (padrão /boot/walkmam.conf)\n"
            "  --play ARQ             abre e toca um arquivo direto (sem UI)\n"
            "  --frame-out ARQ.ppm    com --play: grava o quadro de vídeo em ARQ\n"
@@ -422,6 +428,7 @@ static int wm_selftest(Ui *ui, Canvas *canvas, Library *lib)
     ev.soltou = true;
     ui_handle_key(ui, &ev);
     CONFERE(ui_want_play(ui, NULL) == NULL, "soltar a tecla não repete a ação");
+    ev.soltou = false;   /* sem isto os testes abaixo seriam todos ignorados */
 
     /* 8. Desenho de cada aba sem travar. */
     for (int aba = 0; aba < 4; aba++) {
@@ -429,6 +436,101 @@ static int wm_selftest(Ui *ui, Canvas *canvas, Library *lib)
         ui_render(ui);
     }
     printf("  ok   as 4 abas desenharam\n");
+
+    /* 9. Power curto apaga e acende a tela. Antes, ligar/desligar estava na
+     * aba Sistema, onde o botão de volume se confundia com o brilho. */
+    ui_set_tab(ui, 0);
+    ev.key = WM_KEY_POWER_CURTO;
+    CONFERE(ui_handle_key(ui, &ev) == WM_ACAO_TELA_APAGAR,
+            "power curto apaga a tela");
+    ev.key = WM_KEY_OK;   /* qualquer tecla acende */
+    CONFERE(ui_handle_key(ui, &ev) == WM_ACAO_TELA_ACENDER,
+            "qualquer tecla acende a tela apagada");
+    ev.key = WM_KEY_POWER_CURTO;
+    ui_handle_key(ui, &ev);
+    ev.key = WM_KEY_POWER_CURTO;
+    CONFERE(ui_handle_key(ui, &ev) == WM_ACAO_TELA_ACENDER,
+            "power curto acende de novo");
+
+    /* 10. Power longo (3 s) abre a confirmação de desligar; B cancela. */
+    ev.key = WM_KEY_POWER_LONGO;
+    ui_handle_key(ui, &ev);
+    ev.key = WM_KEY_VOLTAR;
+    CONFERE(ui_handle_key(ui, &ev) == WM_ACAO_NENHUMA,
+            "B cancela o desligar");
+    ev.key = WM_KEY_POWER_LONGO;
+    ui_handle_key(ui, &ev);
+    ev.key = WM_KEY_OK;
+    CONFERE(ui_handle_key(ui, &ev) == WM_ACAO_DESLIGAR,
+            "confirmar desliga o aparelho");
+
+    /* 11. SELECT abre as configurações e o brilho tem piso. O brilho é
+     * injetado porque no CI não há backlight; o piso é o que impede a tela
+     * de ficar preta sem o usuário perceber. */
+    {
+        struct SystemInfo falso;
+        memset(&falso, 0, sizeof(falso));
+        falso.brilho = 50;
+        ui_update_system(ui, &falso);
+    }
+    ev.key = WM_KEY_MENU;
+    CONFERE(ui_handle_key(ui, &ev) == WM_ACAO_NENHUMA, "SELECT abre o menu");
+    for (int i = 0; i < 40; i++) {
+        ev.key = WM_KEY_ESQ;
+        ui_handle_key(ui, &ev);
+    }
+    (void) ui_want_brightness(ui);
+    CONFERE(ui_brilho(ui) == WM_BRILHO_MIN, "brilho para no piso, não em 0%");
+
+    /* 12. Botão de volume dentro do menu não mexe no brilho. */
+    {
+        int antes = ui_brilho(ui);
+
+        ev.key = WM_KEY_VOL_MENOS;
+        ui_handle_key(ui, &ev);
+        (void) ui_want_volume(ui);
+        CONFERE(ui_brilho(ui) == antes, "volume não altera o brilho");
+    }
+    ev.key = WM_KEY_VOLTAR;
+    ui_handle_key(ui, &ev);
+
+    /* 13. L1/R1: na música saltam de faixa, no vídeo avançam/voltam 30 s. */
+    ui_set_tab(ui, 0);
+    ev.key = WM_KEY_PULO_PROX;
+    ui_handle_key(ui, &ev);
+    CONFERE(ui_want_transport(ui) == 2, "L1 salta para a próxima faixa");
+    ev.key = WM_KEY_PULO_ANT;
+    ui_handle_key(ui, &ev);
+    CONFERE(ui_want_transport(ui) == 1, "R1 volta para a faixa anterior");
+    ui_set_tab(ui, 1);
+    ev.key = WM_KEY_OK;
+    ui_handle_key(ui, &ev);
+    (void) ui_want_play(ui, NULL);
+    ev.key = WM_KEY_PULO_PROX;
+    ui_handle_key(ui, &ev);
+    {
+        double alvo = ui_want_seek(ui, NULL);
+
+        CONFERE(alvo >= 30, "L1 no vídeo avança 30 s");
+    }
+    ev.key = WM_KEY_PULO_ANT;
+    ui_handle_key(ui, &ev);
+    {
+        double alvo = ui_want_seek(ui, NULL);
+
+        CONFERE(alvo <= -30, "R1 no vídeo volta 30 s");
+    }
+
+    /* 14. A aba Sistema é só informação: nenhuma tecla de volume/brilho age. */
+    ui_set_tab(ui, 3);
+    {
+        int antes = ui_brilho(ui);
+
+        ev.key = WM_KEY_VOL_MAIS;
+        ui_handle_key(ui, &ev);
+        CONFERE(ui_want_brightness(ui) < 0 && ui_brilho(ui) == antes,
+                "aba Sistema não mexe no brilho");
+    }
 
 #undef CONFERE
     return falhas ? 1 : 0;
@@ -450,6 +552,7 @@ int main(int argc, char **argv)
     bool listar = false;
     bool escanear = false;
     bool selftest = false;
+    bool abrir_menu_para_foto = false;
     struct DrmInfo info;
     Drm *drm = NULL;
     Canvas canvas;
@@ -478,6 +581,8 @@ int main(int argc, char **argv)
             escanear = true;
         } else if (strcmp(argv[i], "--selftest") == 0) {
             selftest = true;
+        } else if (strcmp(argv[i], "--menu") == 0) {
+            abrir_menu_para_foto = true;
         } else if (strcmp(argv[i], "--screenshot") == 0 && i + 1 < argc) {
             screenshot = argv[++i];
         } else if (strcmp(argv[i], "--tab") == 0 && i + 1 < argc) {
@@ -803,6 +908,15 @@ int main(int argc, char **argv)
     if (screenshot) {
         bool gravou;
 
+        if (abrir_menu_para_foto) {
+            /* Mesma tecla que o usuário usa (SELECT): exercita o caminho real
+             * de abrir o menu, não uma função de desenho chamada à parte. */
+            struct KeyEvent ev;
+
+            memset(&ev, 0, sizeof(ev));
+            ev.key = WM_KEY_MENU;
+            ui_handle_key(ui, &ev);
+        }
         ui_render(ui);
         gravou = salvar_ppm(screenshot, &canvas);
         ui_destroy(ui);
@@ -845,6 +959,26 @@ int main(int argc, char **argv)
                 break;
             case WM_ACAO_RESSCAN:
                 library_scan(lib);
+                break;
+            case WM_ACAO_TELA_APAGAR:
+                /* DPMS off: o painel para de ser varrido. É o que economiza
+                 * bateria; baixar o brilho apenas reduz o backlight. */
+                if (!drm || !drm_dpms(drm, false)) {
+                    /* Sem DPMS, cai no brilho mínimo como degradação. */
+                    brilho_fallback = ui_brilho(ui);
+                    gravar_brilho(WM_BRILHO_MIN);
+                }
+                break;
+            case WM_ACAO_TELA_ACENDER:
+                if (drm) {
+                    drm_dpms(drm, true);
+                }
+                /* O DPMS não mexe no backlight; o brilho só precisa ser
+                 * reescrito quando o apagar caiu no fallback (sem DPMS). */
+                if (brilho_fallback > 0) {
+                    gravar_brilho(brilho_fallback);
+                    brilho_fallback = 0;
+                }
                 break;
             default:
                 break;
@@ -973,12 +1107,44 @@ int main(int argc, char **argv)
         if (player) {
             struct PlayerStatus st;
             player_status(player, &st);
-            if (st.terminou && ui_video_fullscreen(ui)) {
+            if (st.terminou) {
+                /* Fim da faixa/vídeo. Antes disso o app apenas parava no
+                 * silêncio e nada avançava (aparecia como "terminou
+                 * interrompido" no log a cada 1-2 s). */
+                player_close(player);
+                player = NULL;
+                ui_set_player(ui, NULL);
+                if (st.tem_video) {
+                    /* Vídeo: volta para a lista em vez de emendar outro
+                     * (num aparelho de 4" o usuário escolhe o que ver). */
+                    ui_set_video_fullscreen(ui, false);
+                    ui_set_current_path(ui, NULL);
+                } else {
+                    const char *proximo = ui_step_track(ui, 1);
+
+                    if (proximo) {
+                        player = player_open(proximo, audio, canvas.w, canvas.h,
+                                             volume);
+                        if (player) {
+                            player_set_volume(player, volume);
+                        }
+                        ui_set_player(ui, player);
+                        ui_set_current_path(ui, proximo);
+                        wm_log("fila: proxima faixa %s", proximo);
+                    } else {
+                        ui_set_current_path(ui, NULL);
+                    }
+                }
                 precisa_desenhar = true;
             }
         }
 
-        if (precisa_desenhar || agora - ultimo_desenho > 0.25) {
+        /* Com a tela apagada (DPMS off) não se desenha nem se faz flip: flip
+         * em CRTC desligado falha, e desenhar à toa gasta CPU/bateria. O som
+         * continua — é assim que se ouve música com o aparelho "apagado". */
+        if (ui_tela_apagada(ui)) {
+            precisa_desenhar = false;
+        } else if (precisa_desenhar || agora - ultimo_desenho > 0.25) {
             ui_render(ui);
             if (drm) {
                 drm_present(drm, &canvas);
@@ -996,6 +1162,14 @@ int main(int argc, char **argv)
     }
 
     wm_log("encerrando");
+    /* Se a tela ficou em DPMS off, religa o painel antes de sair: senão o
+     * aparelho volta ao console com a tela apagada. */
+    if (drm) {
+        drm_dpms(drm, true);
+    }
+    if (brilho_fallback > 0) {
+        gravar_brilho(brilho_fallback);
+    }
     if (player) {
         player_close(player);
     }

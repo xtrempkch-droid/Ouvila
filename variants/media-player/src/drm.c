@@ -48,6 +48,9 @@ struct Drm {
     int tty_fd;
     bool tem_flip_pendente;
     volatile bool flip_concluido;
+    int falhas;
+    int dpms_prop;      /* id da propriedade DPMS do conector (-1 = não existe) */
+    bool dpms_ligado;
 };
 
 static void parse_transform(const char *nome, int *rotacao, bool *flip_x)
@@ -179,6 +182,25 @@ Drm *drm_open(struct DrmInfo *info, const char *transform)
     }
     d->fb_w = (int) d->mode.hdisplay;
     d->fb_h = (int) d->mode.vdisplay;
+    d->dpms_prop = -1;
+    d->dpms_ligado = true;
+
+    /* Propriedade DPMS do conector: é o que apaga a saída de verdade (o painel
+     * para de ser varrido e o backlight pode ser desligado pelo kernel). Usado
+     * pelo "apagar a tela" do botão de power. */
+    for (int i = 0; i < conn->count_props; i++) {
+        drmModePropertyRes *prop = drmModeGetProperty(d->fd, conn->props[i]);
+        if (!prop) {
+            continue;
+        }
+        if (strcmp(prop->name, "DPMS") == 0) {
+            d->dpms_prop = (int) prop->prop_id;
+        }
+        drmModeFreeProperty(prop);
+        if (d->dpms_prop >= 0) {
+            break;
+        }
+    }
 
     if (conn->encoder_id) {
         enc = drmModeGetEncoder(d->fd, conn->encoder_id);
@@ -353,6 +375,31 @@ static void copiar_rotacionado(Drm *d, const Canvas *c)
     }
 }
 
+bool drm_dpms(Drm *d, bool ligado)
+{
+    if (!d || d->dpms_prop < 0) {
+        return false;
+    }
+    if (d->dpms_ligado == ligado) {
+        return true;
+    }
+    /* 0 = On, 3 = Off (enum DRM_MODE_DPMS_ON/OFF). */
+    if (drmModeConnectorSetProperty(d->fd, d->conn_id, (uint32_t) d->dpms_prop,
+                                    ligado ? DRM_MODE_DPMS_ON
+                                           : DRM_MODE_DPMS_OFF) != 0) {
+        wm_log("drm: DPMS %s falhou: %s", ligado ? "on" : "off", strerror(errno));
+        return false;
+    }
+    d->dpms_ligado = ligado;
+    wm_log("drm: saida %s (DPMS)", ligado ? "ligada" : "desligada");
+    return true;
+}
+
+int drm_falhas(const Drm *d)
+{
+    return d ? d->falhas : 0;
+}
+
 bool drm_present(Drm *d, const Canvas *c)
 {
     struct pollfd pfd;
@@ -381,7 +428,11 @@ bool drm_present(Drm *d, const Canvas *c)
         /* Alguns drivers recusam page flip no primeiro frame; cai para SetCrtc. */
         if (drmModeSetCrtc(d->fd, d->crtc_id, d->fb_id, 0, 0, &d->conn_id, 1,
                            &d->mode) != 0) {
-            wm_log("drm: page flip e SetCrtc falharam: %s", strerror(errno));
+            /* Só loga a primeira falha de cada rajada: se o DRM morrer, isso
+             * aconteceria a cada quadro e encheria o log do cartão. */
+            if (d->falhas++ % 120 == 0) {
+                wm_log("drm: page flip e SetCrtc falharam: %s", strerror(errno));
+            }
             return false;
         }
         return true;

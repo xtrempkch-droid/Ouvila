@@ -9,10 +9,15 @@
  *   Vídeos  — grade da biblioteca + reprodução em tela cheia (o quadro vem do
  *             decodificador; esta tela é o "video player" da variante)
  *   Rádio   — Wi-Fi/BT: estado do kernel + scan/conectar pelo NetworkManager
- *   Sistema — modelo, bateria, armazenamento, brilho, desligar/reiniciar
+ *   Sistema — SÓ informação: modelo, bateria, armazenamento e brilho atual
+ *
+ * Nada se configura na aba Sistema (o botão de volume do hardware se confundia
+ * com o brilho ali). Todo ajuste mora no menu de configurações, aberto com
+ * SELECT em qualquer aba: brilho, apagar a tela, desligar, reiniciar, fechar.
  *
  * Entrada: só o gamepad/teclado (não há toque). A navegação é vertical dentro
- * da aba e horizontal entre abas, com as teclas L/R para pular de aba.
+ * da aba e horizontal entre abas, com as teclas L/R para pular de aba, L1/R1
+ * para saltar faixa/página e o botão de power para apagar/acender a tela.
  */
 
 #include "wm.h"
@@ -30,6 +35,20 @@ enum { ABA_MUSICA = 0, ABA_VIDEOS = 1, ABA_RADIO = 2, ABA_SISTEMA = 3 };
 enum {
     FOCO_LISTA = 0,
     FOCO_CONTROLES = 1
+};
+
+/* Piso de brilho. Abaixo disso o painel fica ilegível e, pior, parece que o
+ * aparelho travou. Para economizar bateria existe "Apagar a tela" (DPMS). */
+#define BRILHO_MIN WM_BRILHO_MIN
+
+/* Índice dos itens do menu de configurações. */
+enum {
+    MENU_BRILHO = 0,
+    MENU_APAGAR,
+    MENU_DESLIGAR,
+    MENU_REINICIAR,
+    MENU_FECHAR,
+    MENU_ITENS
 };
 
 struct Ui {
@@ -77,6 +96,7 @@ struct Ui {
     bool tem_quer_volume;
     bool quer_toggle;
     int quer_brilho;
+    bool tem_quer_brilho;
     bool quer_anterior;
     bool quer_proximo;
     bool quer_parar;
@@ -85,6 +105,14 @@ struct Ui {
     bool teclado_aberto;
     bool maiusculas;
     char entrada[128];
+
+    /* Menu de configurações (aberto pelo SELECT) e diálogo de confirmação.
+     * A aba Sistema ficou só de informação: qualquer ajuste acontece aqui. */
+    bool menu_aberto;
+    int menu_item;
+    bool dialogo_aberto;
+    int dialogo_item;
+    bool tela_apagada;
     int cursor_tecla;
     char ssid_pendente[64];
 
@@ -134,6 +162,7 @@ static const Color COR_PAINEL = { 22, 30, 46, 215 };
 static const Color COR_PAINEL_2 = { 29, 39, 57, 235 };
 static const Color COR_BORDA = { 42, 55, 78, 255 };
 static const Color COR_ACENTO = { 244, 63, 94, 255 };
+static const Color COR_ACENTO_ESC = { 225, 29, 72, 255 };
 static const Color COR_TEXTO = { 248, 250, 252, 255 };
 static const Color COR_MUTED = { 148, 163, 184, 255 };
 static const Color COR_OK = { 52, 211, 153, 255 };
@@ -372,7 +401,7 @@ static void desenhar_rodape(Ui *u, Layout l)
     }
 
     if (l.compacto) {
-        snprintf(buf, sizeof(buf), "A abre  B volta  L/R aba  X play/pause");
+        snprintf(buf, sizeof(buf), "A abre  B volta  L/R aba  L1/R1 faixa  Y config");
         texto(c, u->f_pequeno, l.margem, y + l.rodape_h / 2 + 4, COR_MUTED, buf);
         snprintf(buf, sizeof(buf), "%s", st.aberto ? st.titulo : "");
         texto_limitado(c, u->f_pequeno, c->w / 2, y + l.rodape_h / 2 + 4, COR_TEXTO,
@@ -384,7 +413,7 @@ static void desenhar_rodape(Ui *u, Layout l)
     }
 
     texto(c, u->f_pequeno, l.margem, y + l.rodape_h / 2 + 5, COR_MUTED,
-          "A selecionar   B voltar   L/R trocar de aba   X tocar/pausar   Y menu");
+          "A abre · B volta · L/R aba · L1/R1 faixa · X play/pause · Y config");
 
     /* Mini player centralizado à direita. */
     {
@@ -697,7 +726,7 @@ static void desenhar_video_tela_cheia(Ui *u)
         barra_progresso(c, (Rect) { 20, y + 34, c->w - 40, 5 },
                         st.duracao > 0 ? st.posicao / st.duracao : 0, COR_ACENTO);
         texto(c, u->f_pequeno, 20, y + 60, COR_MUTED,
-              "B sai   X pausa   ◀ ▶ avança/volta 10 s   L/R aba");
+              "B sai   X pausa   ◀ ▶ 10 s   L1/R1 30 s   L/R aba");
     }
 }
 
@@ -869,7 +898,8 @@ static void desenhar_sistema(Ui *u, Layout l)
         }
     }
 
-    /* Brilho e energia. */
+    /* Brilho só como informação: os ajustes ficam no menu (SELECT). Misturar
+     * as duas coisas fez o botão de volume parecer controle de brilho. */
     y = direita.y + direita.h - 74;
     texto(c, u->f_pequeno, direita.x + 14, y, COR_MUTED, "Brilho");
     if (u->sys.brilho >= 0) {
@@ -881,7 +911,117 @@ static void desenhar_sistema(Ui *u, Layout l)
         texto(c, u->f_pequeno, direita.x + 90, y, COR_MUTED, "sem backlight");
     }
     texto(c, u->f_pequeno, direita.x + 14, y + 34, COR_MUTED,
-          "◀ ▶ brilho   Y desliga   X reinicia");
+          "SELECT abre as configurações (brilho, desligar)");
+}
+
+/* ---------------------------------------------------- menu e diálogo --- */
+
+static void caixa_modal(Canvas *c, Layout l, int larg, int alt, Rect *saida)
+{
+    Rect caixa = { (c->w - larg) / 2, (c->h - alt) / 2, larg, alt };
+
+    /* Véu escuro: deixa claro que o resto está inativo. */
+    gfx_fill(c, (Rect) { 0, 0, c->w, c->h }, wm_rgba(2, 6, 14, 190));
+    gfx_fill_round(c, caixa, l.raio, COR_PAINEL_2);
+    gfx_stroke_round(c, caixa, l.raio, COR_BORDA, 2);
+    *saida = caixa;
+}
+
+static void desenhar_menu(Ui *u, Layout l)
+{
+    Canvas *c = u->canvas;
+    int larg = l.compacto ? c->w - 60 : 420;
+    int alt = l.compacto ? 250 : 300;
+    Rect caixa;
+    Rect linha;
+    char buf[96];
+    int y;
+
+    caixa_modal(c, l, larg, alt, &caixa);
+    texto(c, u->f_texto, caixa.x + 16, caixa.y + 26, COR_TEXTO, "Configurações");
+
+    for (int i = 0; i < MENU_ITENS; i++) {
+        bool sel = (u->menu_item == i);
+        const char *rotulo;
+        char valor[32] = "";
+
+        linha = (Rect) { caixa.x + 10, caixa.y + 40 + i * (l.compacto ? 34 : 40),
+                         caixa.w - 20, l.compacto ? 30 : 34 };
+        switch (i) {
+        case MENU_BRILHO:
+            rotulo = "Brilho";
+            if (u->sys.brilho >= 0) {
+                snprintf(valor, sizeof(valor), "◀ %d%% ▶", u->sys.brilho);
+            } else {
+                snprintf(valor, sizeof(valor), "sem backlight");
+            }
+            break;
+        case MENU_APAGAR:
+            rotulo = "Apagar a tela";
+            snprintf(valor, sizeof(valor), "economia de bateria");
+            break;
+        case MENU_DESLIGAR:
+            rotulo = "Desligar";
+            snprintf(valor, sizeof(valor), "segure o power 3 s");
+            break;
+        case MENU_REINICIAR:
+            rotulo = "Reiniciar";
+            break;
+        default:
+            rotulo = "Fechar";
+            snprintf(valor, sizeof(valor), "B");
+            break;
+        }
+        if (sel) {
+            gfx_fill_round(c, linha, 8, wm_rgba(244, 63, 94, 60));
+            gfx_stroke_round(c, linha, 8, COR_ACENTO, 1);
+        } else {
+            gfx_fill_round(c, linha, 8, wm_rgba(255, 255, 255, 8));
+        }
+        texto(c, u->f_pequeno, linha.x + 12, linha.y + linha.h / 2 + 5,
+              sel ? COR_TEXTO : COR_MUTED, rotulo);
+        if (valor[0]) {
+            texto(c, u->f_pequeno,
+                  linha.x + linha.w - largura_texto(u->f_pequeno, valor) - 12,
+                  linha.y + linha.h / 2 + 5, sel ? COR_ACENTO : COR_MUTED, valor);
+        }
+    }
+    y = caixa.y + caixa.h - 12;
+    texto(c, u->f_pequeno, caixa.x + 16, y, COR_MUTED,
+          "◀ ▶ ajusta · B fecha");
+    (void) buf;
+}
+
+static void desenhar_dialogo(Ui *u, Layout l)
+{
+    Canvas *c = u->canvas;
+    int larg = l.compacto ? c->w - 80 : 380;
+    int alt = l.compacto ? 150 : 170;
+    Rect caixa;
+    Rect botao;
+    static const char *opcoes[] = { "Cancelar", "Desligar" };
+
+    caixa_modal(c, l, larg, alt, &caixa);
+    texto(c, u->f_texto, caixa.x + 16, caixa.y + 30, COR_TEXTO, "Desligar o aparelho?");
+    texto(c, u->f_pequeno, caixa.x + 16, caixa.y + 52, COR_MUTED,
+          "A música para e o aparelho desliga.");
+
+    for (int i = 0; i < 2; i++) {
+        bool sel = (u->dialogo_item == i);
+        int w = (caixa.w - 48) / 2;
+
+        botao = (Rect) { caixa.x + 16 + i * (w + 16), caixa.y + alt - 56, w, 38 };
+        gfx_fill_round(c, botao, 10, (i == 1) ? (sel ? COR_ACENTO_ESC : COR_ACENTO)
+                                              : wm_rgba(255, 255, 255, sel ? 40 : 18));
+        if (sel) {
+            gfx_stroke_round(c, botao, 10, COR_TEXTO, 2);
+        }
+        {
+            int tw = largura_texto(u->f_texto, opcoes[i]);
+            texto(c, u->f_texto, botao.x + (botao.w - tw) / 2,
+                  botao.y + botao.h / 2 + 6, COR_TEXTO, opcoes[i]);
+        }
+    }
 }
 
 /* ------------------------------------------------------- teclado virtual --- */
@@ -986,6 +1126,12 @@ void ui_render(Ui *u)
         if (u->teclado_aberto) {
             desenhar_teclado(u, l);
         }
+        if (u->menu_aberto) {
+            desenhar_menu(u, l);
+        }
+        if (u->dialogo_aberto) {
+            desenhar_dialogo(u, l);
+        }
         return;
     }
 
@@ -1082,6 +1228,12 @@ void ui_render(Ui *u)
     if (u->teclado_aberto) {
         desenhar_teclado(u, l);
     }
+    if (u->menu_aberto) {
+        desenhar_menu(u, l);
+    }
+    if (u->dialogo_aberto) {
+        desenhar_dialogo(u, l);
+    }
 }
 
 /* --------------------------------------------------------------- ações --- */
@@ -1170,12 +1322,187 @@ static int total_teclas(void)
     return total;
 }
 
+/* Ajusta o brilho respeitando o piso: abaixo de BRILHO_MIN o painel fica
+ * ilegível (parece travado) e não economiza o que se espera — para isso existe
+ * "Apagar a tela". Devolve o pedido para o main aplicar no backlight. */
+static int ajustar_brilho(Ui *u, int delta)
+{
+    int atual = u->sys.brilho;
+
+    if (atual < 0) {
+        return -1;   /* sem backlight: nada a fazer */
+    }
+    atual += delta;
+    if (atual < BRILHO_MIN) {
+        atual = BRILHO_MIN;
+    }
+    if (atual > 100) {
+        atual = 100;
+    }
+    u->sys.brilho = atual;      /* reflexo imediato, sem esperar o próximo poll */
+    u->quer_brilho = atual;
+    u->tem_quer_brilho = true;
+    return atual;
+}
+
+static void abrir_menu(Ui *u)
+{
+    u->menu_aberto = true;
+    u->menu_item = MENU_BRILHO;
+}
+
+static void fechar_menu(Ui *u)
+{
+    u->menu_aberto = false;
+    u->dialogo_aberto = false;
+}
+
+/* Executa o item selecionado do menu. Devolve a ação para o main. */
+static int ativar_item_menu(Ui *u)
+{
+    switch (u->menu_item) {
+    case MENU_BRILHO:
+        /* Enter no brilho sobe 5% (◀▶ ajusta nos dois sentidos). */
+        ajustar_brilho(u, 5);
+        return WM_ACAO_BRILHO;
+    case MENU_APAGAR:
+        u->menu_aberto = false;
+        return WM_ACAO_TELA_APAGAR;
+    case MENU_DESLIGAR:
+        /* Confirmação: desligar por engano no meio de uma música é chato. */
+        u->dialogo_aberto = true;
+        u->dialogo_item = 1;
+        return WM_ACAO_NENHUMA;
+    case MENU_REINICIAR:
+        u->menu_aberto = false;
+        return WM_ACAO_REINICIAR;
+    default:
+        u->menu_aberto = false;
+        return WM_ACAO_NENHUMA;
+    }
+}
+
+/* Diálogo de desligar: 0 = cancelar, 1 = desligar. */
+static int ativar_dialogo(Ui *u)
+{
+    int escolha = u->dialogo_item;
+
+    u->dialogo_aberto = false;
+    u->menu_aberto = false;
+    return escolha == 1 ? WM_ACAO_DESLIGAR : WM_ACAO_NENHUMA;
+}
+
 int ui_handle_key(Ui *u, const struct KeyEvent *ev)
 {
     int acao = WM_ACAO_NENHUMA;
     int n = itens_da_aba(u);
 
     if (ev->soltou) {
+        return WM_ACAO_NENHUMA;
+    }
+
+    /* Power: toque curto apaga/acende a tela; segurar 3 s abre o diálogo de
+     * desligar (o mesmo que o item do menu). Fica antes de tudo para funcionar
+     * em qualquer tela, inclusive no vídeo em tela cheia. */
+    if (ev->key == WM_KEY_POWER_CURTO) {
+        if (u->tela_apagada) {
+            u->tela_apagada = false;
+            return WM_ACAO_TELA_ACENDER;
+        }
+        /* Com menu/diálogo aberto, apagar a tela esconderia o diálogo: fecha. */
+        if (u->dialogo_aberto || u->menu_aberto) {
+            fechar_menu(u);
+            return WM_ACAO_NENHUMA;
+        }
+        u->tela_apagada = true;
+        return WM_ACAO_TELA_APAGAR;
+    }
+    if (ev->key == WM_KEY_POWER_LONGO) {
+        u->tela_apagada = false;
+        u->menu_aberto = false;
+        u->dialogo_aberto = true;
+        u->dialogo_item = 1;
+        return WM_ACAO_TELA_ACENDER;
+    }
+
+    /* Tela apagada: qualquer outra tecla acende (é o que o usuário espera). */
+    if (u->tela_apagada) {
+        u->tela_apagada = false;
+        return WM_ACAO_TELA_ACENDER;
+    }
+
+    /* Diálogo de confirmação: tem o foco. */
+    if (u->dialogo_aberto) {
+        switch (ev->key) {
+        case WM_KEY_ESQ:
+        case WM_KEY_DIR:
+            u->dialogo_item = u->dialogo_item ? 0 : 1;
+            break;
+        case WM_KEY_OK:
+        case WM_KEY_ENTER:
+            return ativar_dialogo(u);
+        case WM_KEY_VOLTAR:
+            u->dialogo_aberto = false;
+            break;
+        default:
+            /* Volume continua funcionando com o diálogo aberto. */
+            if (ev->key == WM_KEY_VOL_MAIS) {
+                u->quer_volume = audio_volume(u->audio) + 5;
+                u->tem_quer_volume = true;
+            } else if (ev->key == WM_KEY_VOL_MENOS) {
+                u->quer_volume = audio_volume(u->audio) - 5;
+                u->tem_quer_volume = true;
+            }
+            break;
+        }
+        return WM_ACAO_NENHUMA;
+    }
+
+    /* Menu de configurações: idem. */
+    if (u->menu_aberto) {
+        switch (ev->key) {
+        case WM_KEY_CIMA:
+            u->menu_item = (u->menu_item + MENU_ITENS - 1) % MENU_ITENS;
+            break;
+        case WM_KEY_BAIXO:
+            u->menu_item = (u->menu_item + 1) % MENU_ITENS;
+            break;
+        case WM_KEY_ESQ:
+            if (u->menu_item == MENU_BRILHO) {
+                ajustar_brilho(u, -5);
+                return WM_ACAO_BRILHO;
+            }
+            break;
+        case WM_KEY_DIR:
+            if (u->menu_item == MENU_BRILHO) {
+                ajustar_brilho(u, 5);
+                return WM_ACAO_BRILHO;
+            }
+            break;
+        case WM_KEY_OK:
+        case WM_KEY_ENTER:
+            return ativar_item_menu(u);
+        case WM_KEY_VOLTAR:
+        case WM_KEY_MENU:
+            fechar_menu(u);
+            break;
+        case WM_KEY_VOL_MAIS:
+            u->quer_volume = audio_volume(u->audio) + 5;
+            u->tem_quer_volume = true;
+            break;
+        case WM_KEY_VOL_MENOS:
+            u->quer_volume = audio_volume(u->audio) - 5;
+            u->tem_quer_volume = true;
+            break;
+        default:
+            break;
+        }
+        return WM_ACAO_NENHUMA;
+    }
+
+    /* SELECT abre as configurações em qualquer aba. */
+    if (ev->key == WM_KEY_MENU) {
+        abrir_menu(u);
         return WM_ACAO_NENHUMA;
     }
 
@@ -1236,6 +1563,17 @@ int ui_handle_key(Ui *u, const struct KeyEvent *ev)
         case WM_KEY_VOL_MENOS:
             u->quer_volume = audio_volume(u->audio) - 5;
             u->tem_quer_volume = true;
+            break;
+        /* L1/R1 no vídeo: avançar/voltar rápido (30 s). */
+        case WM_KEY_PULO_PROX:
+            u->quer_seek = 30;
+            u->tem_quer_seek = true;
+            u->osd_ate = wm_now() + 3.0;
+            break;
+        case WM_KEY_PULO_ANT:
+            u->quer_seek = -30;
+            u->tem_quer_seek = true;
+            u->osd_ate = wm_now() + 3.0;
             break;
         default:
             break;
@@ -1345,6 +1683,27 @@ int ui_handle_key(Ui *u, const struct KeyEvent *ev)
                 pedir_tocar(u);
             }
             break;
+        /* L1/R1: na música salta de faixa; na grade, pula uma página. */
+        case WM_KEY_PULO_PROX:
+            if (u->aba == ABA_MUSICA) {
+                u->quer_proximo = true;
+            } else {
+                u->cursor_tecla += colunas * 4;
+                if (u->cursor_tecla >= n) {
+                    u->cursor_tecla = n > 0 ? n - 1 : 0;
+                }
+            }
+            break;
+        case WM_KEY_PULO_ANT:
+            if (u->aba == ABA_MUSICA) {
+                u->quer_anterior = true;
+            } else {
+                u->cursor_tecla -= colunas * 4;
+                if (u->cursor_tecla < 0) {
+                    u->cursor_tecla = 0;
+                }
+            }
+            break;
         case WM_KEY_PG_BAIXO:
             u->cursor_tecla += colunas * 4;
             if (u->cursor_tecla >= n) {
@@ -1396,27 +1755,9 @@ int ui_handle_key(Ui *u, const struct KeyEvent *ev)
         }
         break;
     case ABA_SISTEMA:
+        /* Nada de ajuste aqui: o botão de volume era confundido com brilho
+         * porque ambos estavam mapeados nesta aba. Ajustes ficam no SELECT. */
         switch (ev->key) {
-        case WM_KEY_ESQ:
-        case WM_KEY_VOL_MENOS:
-            u->quer_brilho = u->sys.brilho > 0 ? u->sys.brilho - 5 : -1;
-            acao = WM_ACAO_BRILHO;
-            break;
-        case WM_KEY_DIR:
-        case WM_KEY_VOL_MAIS:
-            u->quer_brilho = u->sys.brilho >= 0 ? u->sys.brilho + 5 : -1;
-            if (u->quer_brilho > 100) {
-                u->quer_brilho = 100;
-            }
-            acao = WM_ACAO_BRILHO;
-            break;
-        case WM_KEY_MENU:
-            acao = WM_ACAO_DESLIGAR;
-            break;
-        case WM_KEY_OK:
-        case WM_KEY_ENTER:
-            acao = WM_ACAO_REINICIAR;
-            break;
         case WM_KEY_PG_BAIXO:
             acao = WM_ACAO_RESSCAN;
             break;
@@ -1543,14 +1884,28 @@ int ui_want_volume(Ui *u)
     return v;
 }
 
+bool ui_tela_apagada(Ui *u)
+{
+    return u && u->tela_apagada;
+}
+
+int ui_brilho(Ui *u)
+{
+    if (!u) {
+        return -1;
+    }
+    return u->sys.brilho;
+}
+
 int ui_want_brightness(Ui *u)
 {
     int v;
 
-    if (!u || u->quer_brilho == 0) {
+    if (!u || !u->tem_quer_brilho) {
         return -1;
     }
     v = u->quer_brilho;
+    u->tem_quer_brilho = false;
     u->quer_brilho = 0;
     return v;
 }

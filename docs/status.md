@@ -3,6 +3,31 @@
 Ponto de partida para continuar o trabalho depois de testar no aparelho. Diz o que já
 está pronto, o que ainda é **hipótese** e exatamente o que testar e devolver.
 
+## PONTO DE RETOMADA (2026-11-01)
+
+> Leia esta seção antes de qualquer coisa. O resto do documento é o histórico.
+
+### Variante `media-player`: primeiro teste no aparelho (2026-11-01)
+
+O usuário gravou a `media-player-v0.1` na **X35H** e o app **subiu, desenhou em tela
+cheia e tocou música** — a arquitetura "sem camada" (DRM/KMS + FFmpeg + ALSA num
+binário só) funciona no hardware. Os problemas eram de controle e de fim de faixa:
+
+1. o app **parava no fim de cada música** (o log mostrava "terminou (interrompido)" a
+   cada 1-2 s) — agora abre a próxima da lista; no vídeo volta para a grade;
+2. **ligar/desligar** era na aba Sistema → foi para o **botão de power** (toque curto
+   apaga/acende a tela com DPMS off, 3 s abre a confirmação de desligar). Exige o
+   drop-in `logind.conf.d/10-walkmam-media-power.conf` (`HandlePowerKey=ignore`),
+   senão o systemd desliga o aparelho antes do app ver a tecla;
+3. a aba Sistema virou **só informação** e todo ajuste foi para o **menu do SELECT** —
+   era ali que o botão de volume se confundia com o brilho;
+4. **brilho com piso de 10%** + "apagar a tela" para economizar bateria;
+5. **L1/R1** saltam faixa/página e dão ±30 s no vídeo.
+
+**O que testar com a imagem nova (v0.2):** power curto/longo, DPMS no painel, vídeo em
+tela cheia com L1/R1, e se há silêncio entre faixas. Detalhes e o que já foi validado
+em [variantes.md](variantes.md#o-que-já-foi-validado-no-aparelho-e-o-que-não-foi).
+
 ## PONTO DE RETOMADA (2026-10-30)
 
 > Leia esta seção antes de qualquer coisa. O resto do documento é o histórico.
@@ -502,6 +527,7 @@ compilação; o `diagnostico.txt` mostra o que aconteceu no aparelho.
 | --- | --- | --- |
 | `kodi` (multimídia) | `rk3566-x55-mainline-sdcard-image` | validada no X55 e X35H |
 | `retroarch` (jogos) | `rk3566-x55-retroarch-sdcard-image` | **build #116 success (536 MB); falta teste em hardware** |
+| `media-player` (app único) | `rk3566-x55-media-player-sdcard-image` | **X35H: sobe, desenha e toca** (`media-player-v0.1`); correções de controle e o fim-de-faixa na v0.2 |
 
 Escolha no `Run workflow` (input `variant`); push na `main` constrói `kodi`. Detalhes em
 [variantes.md](variantes.md).

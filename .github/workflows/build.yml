@@ -662,6 +662,7 @@ jobs:
           fi
           for f in \
             variants/media-player/overlay/etc/systemd/system/media-player.service \
+            variants/media-player/overlay/etc/systemd/logind.conf.d/10-walkmam-media-power.conf \
             variants/media-player/overlay/usr/local/bin/start-media-player.sh \
           ; do
             if [ ! -e "$f" ]; then
@@ -1058,6 +1059,11 @@ jobs:
           sudo install -D -m 0644 \
             variants/media-player/overlay/etc/systemd/system/media-player.service \
             rootfs/etc/systemd/system/media-player.service
+          # O logind, por padrão, desliga o aparelho ao ver a tecla de power —
+          # isso impediria o toque curto (apagar a tela) de funcionar.
+          sudo install -D -m 0644 \
+            variants/media-player/overlay/etc/systemd/logind.conf.d/10-walkmam-media-power.conf \
+            rootfs/etc/systemd/logind.conf.d/10-walkmam-media-power.conf
 
           echo "--> [media-player] Pastas de midia (FAT para copiar do PC, ext4 para scp)..."
           echo "--> /boot/media: o unico lugar que se abre sem rede (a X35H tem o"

@@ -210,7 +210,13 @@ A variante é escolhida no `workflow_dispatch` (input `variant`); **push na `mai
   `build/media-player.sh`): DRM/KMS + FFmpeg + ALSA + FreeType + evdev. **Não usa
   Weston, WebKit/cog, mpv nem backend HTTP** — foi um pedido explícito do usuário
   ("nada de usar outra camada já existente"). Abas: Música, **Vídeos** (tela cheia),
-  Rádio e Sistema. Nada disso foi testado em hardware ainda.
+  Rádio e **Sistema (só informação)**. A aba Sistema **não** configura nada: todo ajuste
+  mora no menu aberto com **SELECT** (brilho com piso de 10%, apagar a tela, desligar,
+  reiniciar). **Power curto** apaga/acende a tela (DPMS off) e **3 s** abrem a
+  confirmação de desligar — e para isso o logind tem de ficar fora
+  (`logind.conf.d/10-walkmam-media-power.conf`, `HandlePowerKey=ignore`), senão o
+  systemd desliga o aparelho no toque. **L1/R1** saltam faixa/página e ±30 s no vídeo.
+  Na X35H (2026-11-01) o app sobe, desenha e toca; as demais funções vieram desse teste.
 
 Detalhes em [docs/variantes.md](docs/variantes.md). Pontos que custam tempo se esquecidos:
 
@@ -1059,3 +1065,59 @@ outro commit resolve sem force-push na branch. Para conferir se o build nasceu, 
   reprodução, ela vem da faixa destacada na lista (era o que faltava para o painel não
   ficar com o disco genérico). Validado decodificando um PNG de verdade e contando os
   pixels da capa no canvas.
+
+### 2026-11-01 (2) — Copilot (media-player: retorno do teste no aparelho)
+
+- **O que o usuário reportou no hardware (X35H, imagem `media-player-v0.1`):** "liga,
+  executa a música, mas tem bugs". Ou seja: **o app sobe, o DRM/KMS desenha em tela
+  cheia e o ALSA toca** — a arquitetura "sem camada" funciona no aparelho. Os bugs eram
+  de controle, não de base.
+- **Seis pedidos dele e o que mudou:**
+  1. **Ligar/desligar no botão de power.** Antes estava na aba Sistema. Agora:
+     **toque curto apaga/acende a tela** (DPMS off — é o que economiza bateria; com a
+     tela apagada o app **para de desenhar e de fazer flip**, mas o som continua),
+     **3 s segurando** abre o diálogo "Desligar?" (◀ ▶ escolhe, A confirma, B cancela) e
+     **qualquer outra tecla acende**. O `input.c` passou a medir a duração do toque
+     (`KEY_POWER` saiu da tabela de tradução: precisa do tempo, não do código).
+  2. **Aba Sistema só informação.** Ela agora mostra modelo/bateria/armazenamento/brilho
+     e **não trata mais tecla de volume nem de brilho** — era daí que vinha o bug de "o
+     volume mexe no brilho". Todo ajuste foi para o **menu do SELECT**
+     (brilho, apagar a tela, desligar, reiniciar, fechar).
+  3. **Brilho com piso.** `WM_BRILHO_MIN` = 10% (`ajustar_brilho()`): abaixo disso o
+     painel fica ilegível e parece travado. Para economizar bateria existe o "apagar a
+     tela", que é o que realmente reduz consumo.
+  4. **L1/R1 com função.** `BTN_TL2`/`BTN_TR2` → `WM_KEY_PULO_ANT`/`PULO_PROX`: música
+     salta faixa, grade de vídeo pula página, tela cheia dá ±30 s. (O volume é hardware,
+     pelo `gpio-keys-vol`, então os gatilhos estavam livres — o usuário confirmou que o
+     botão de volume funciona.)
+- **Bug de verdade encontrado no log dele:** `media-player.log` mostrava faixas abrindo e
+  terminando em 1-2 s, para sempre ("terminou (interrompido)") — **nada avançava**, o app
+  simplesmente parava no silêncio no fim de cada faixa. Agora, ao terminar uma música ele
+  abre a próxima da lista; no **vídeo** ele volta para a grade (emendar outro vídeo
+  sozinho num aparelho de 4" não é o que se espera).
+- **Armadilha nova (custaria o teste no aparelho):** o **systemd-logind trata
+  `KEY_POWER` por conta própria** (`HandlePowerKey=poweroff` é o padrão) — ele desligaria
+  o aparelho no toque curto **antes** de o app ver a tecla, e o "apagar a tela" nunca
+  funcionaria. A imagem instala
+  `/etc/systemd/logind.conf.d/10-walkmam-media-power.conf` com `HandlePowerKey=ignore`
+  (+ long press/suspend/hibernate). O Preflight confere que esse arquivo existe.
+- **Teste que mentia (corrigido):** o `--selftest` deixava `ev.soltou = true` de um caso
+  para o outro, então **todos** os casos seguintes eram ignorados (a UI devolve
+  `WM_ACAO_NENHUMA` para tecla solta) e o grupo 4 do `tools/test-media-player.sh` dizia
+  "ok". Agora o selftest zera o campo e o script confere **exit code**, o texto e a
+  **quantidade de casos** (20+), para um selftest que aborta cedo não passar.
+- **Cobertura nova no `--selftest` (21 casos, verdes):** power curto apaga/acende,
+  qualquer tecla acende, power longo + B cancela, power longo + A desliga, SELECT abre o
+  menu, brilho para no piso (não em 0%), volume não mexe no brilho dentro do menu, L1/R1
+  na música e ±30 s no vídeo, aba Sistema não mexe no brilho.
+- **Validação local:** `build/media-player.sh --native` sem warnings (`-Wall -Wextra`),
+  `tools/test-media-player.sh` com 0 falhas e 0 pulados, YAML do workflow parseado e os
+  `run:` dos passos alterados conferidos com `bash -n`.
+- **Pendente / próximo (precisa da imagem nova no aparelho):**
+  1. power curto/longo de verdade — depende do drop-in do logind acima;
+  2. DPMS off/on no painel (o app usa a propriedade `DPMS` do conector via
+     `drmModeConnectorSetProperty`; se a X55 não expuser essa propriedade, o código cai no
+     brilho mínimo como degradação);
+  3. vídeo em tela cheia e o ±30 s do L1/R1 (só o decodificador offline foi testado);
+  4. se aparecer silêncio entre faixas, o próximo passo é um leitor "gapless" (hoje cada
+     fim de faixa recria o pipeline do FFmpeg).

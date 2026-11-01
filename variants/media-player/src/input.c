@@ -45,6 +45,9 @@ struct Input {
 
     int eixo_x;          /* -1, 0, 1 */
     int eixo_y;
+    bool power_pressionado;
+    bool power_longo_emitido;
+    double power_desde;
     double proxima_repeticao;
     bool repetindo;
     int chave_repetindo;
@@ -140,9 +143,18 @@ Input *input_open(void)
     if (!in) {
         return NULL;
     }
-    snprintf(in->nome_gamepad, sizeof(in->nome_gamepad), "(nenhum)");
-    snprintf(in->nome_teclado, sizeof(in->nome_teclado), "(nenhum)");
+    /* Vazio (e não "(nenhum)"): abrir_fontes() só preenche quando o campo está
+     * vazio. Com "(nenhum)" aqui o nome nunca era gravado e o log dizia
+     * "gamepad=(nenhum)" com o gamepad funcionando — confundia a depuração. */
+    in->nome_gamepad[0] = '\0';
+    in->nome_teclado[0] = '\0';
     abrir_fontes(in);
+    if (!in->nome_gamepad[0]) {
+        snprintf(in->nome_gamepad, sizeof(in->nome_gamepad), "(nenhum)");
+    }
+    if (!in->nome_teclado[0]) {
+        snprintf(in->nome_teclado, sizeof(in->nome_teclado), "(nenhum)");
+    }
     return in;
 }
 
@@ -186,10 +198,13 @@ static int traduzir(unsigned short code, bool *digital)
         return WM_KEY_ABA_ANT;
     case BTN_TR:
         return WM_KEY_ABA_PROX;
+    /* L1/R1 (BTN_TL2/BTN_TR2): salto de faixa/álbum e, no vídeo, avançar/voltar.
+     * O volume do aparelho é hardware (gpio-keys-vol -> KEY_VOLUMEUP/DOWN), então
+     * os gatilhos ficam livres para navegação — era o pedido do usuário. */
     case BTN_TL2:
-        return WM_KEY_VOL_MENOS;
+        return WM_KEY_PULO_ANT;
     case BTN_TR2:
-        return WM_KEY_VOL_MAIS;
+        return WM_KEY_PULO_PROX;
     case BTN_SELECT:
         return WM_KEY_PG_BAIXO;
     case BTN_MODE:
@@ -241,24 +256,87 @@ static int traduzir(unsigned short code, bool *digital)
         return WM_KEY_VOL_MENOS;
     case KEY_F1:
         return WM_KEY_MENU;
-    case KEY_POWER:
-        return WM_KEY_SAIR;
+    /* O power é tratado fora do mapa (precisa da duração do toque). */
     default:
         return WM_KEY_NENHUMA;
     }
 }
 
-int input_poll(Input *in, struct KeyEvent *out, int max, int timeout_ms)
-{
-    int n = 0;
-    double agora = wm_now();
+/* Tempo que o botão de power precisa ficar pressionado para o diálogo de
+ * desligar. Toque curto = apagar/acordar a tela (economiza bateria sem
+ * desligar o aparelho). */
+#define POWER_LONGO_SEGUNDOS 3.0
 
-    if (!in || !out || max <= 0) {
+/* Converte um evento do kernel em 0..1 KeyEvent. Ponto único de tradução: antes
+ * havia uma cópia no laço principal e outra na segunda passada, e as duas
+ * precisavam lembrar do power. Devolve quantos eventos escreveu (0 ou 1). */
+static int processar_evento(Input *in, const struct input_event *ev,
+                            bool eh_gamepad, struct KeyEvent *out, int max,
+                            double agora)
+{
+    if (max <= 0) {
         return 0;
     }
 
+    if (ev->type != EV_KEY) {
+        return 0;
+    }
+    /* value 2 = auto-repeat do teclado; ignoramos (temos o do analógico). */
+    if (ev->value == 2) {
+        return 0;
+    }
+
+    /* Power: o significado depende da duração. Vem do rk805 pwrkey
+     * (/dev/input/event0 no X35H/X55). Emitimos o "longo" no instante em que
+     * passa do limite (o usuário tem retorno sem soltar a tecla) e o "curto" só
+     * ao soltar, se não houve longo. */
+    if (ev->code == KEY_POWER) {
+        if (ev->value == 1) {
+            if (!in->power_pressionado) {
+                in->power_pressionado = true;
+                in->power_longo_emitido = false;
+                in->power_desde = agora;
+            }
+            return 0;
+        }
+        if (ev->value == 0) {
+            bool longo = in->power_longo_emitido;
+            in->power_pressionado = false;
+            in->power_longo_emitido = false;
+            if (longo) {
+                return 0;
+            }
+            out[0].key = WM_KEY_POWER_CURTO;
+            out[0].soltou = false;
+            out[0].usb = false;
+            return 1;
+        }
+        return 0;
+    }
+
+    {
+        bool digital = false;
+        int acao = traduzir(ev->code, &digital);
+
+        if (acao == WM_KEY_NENHUMA) {
+            return 0;
+        }
+        out[0].key = acao;
+        out[0].soltou = (ev->value == 0);
+        out[0].usb = digital || !eh_gamepad;
+        return 1;
+    }
+}
+
+/* Lê tudo o que estiver pendente em cada fonte. Usado no laço principal e na
+ * segunda passada (depois do sleep). */
+static int drenar(Input *in, struct KeyEvent *out, int max, double agora)
+{
+    int n = 0;
+
     for (int i = 0; i < in->n_fontes && n < max; i++) {
         struct input_event ev;
+
         while (read(in->fontes[i].fd, &ev, sizeof(ev)) == (ssize_t) sizeof(ev)) {
             if (ev.type == EV_ABS) {
                 if (ev.code == ABS_X || ev.code == ABS_Y) {
@@ -288,28 +366,33 @@ int input_poll(Input *in, struct KeyEvent *out, int max, int timeout_ms)
                 }
                 continue;
             }
-            if (ev.type != EV_KEY) {
-                continue;
-            }
-            {
-                bool digital = false;
-                int acao = traduzir(ev.code, &digital);
-
-                if (acao == WM_KEY_NENHUMA) {
-                    continue;
-                }
-                /* value 2 = auto-repeat do teclado; ignora (temos o nosso). */
-                if (ev.value == 2) {
-                    continue;
-                }
-                if (n < max) {
-                    out[n].key = acao;
-                    out[n].soltou = (ev.value == 0);
-                    out[n].usb = digital || !in->fontes[i].eh_gamepad;
-                    n++;
-                }
-            }
+            n += processar_evento(in, &ev, in->fontes[i].eh_gamepad, &out[n],
+                                  max - n, agora);
         }
+    }
+    return n;
+}
+
+int input_poll(Input *in, struct KeyEvent *out, int max, int timeout_ms)
+{
+    int n;
+    double agora;
+
+    if (!in || !out || max <= 0) {
+        return 0;
+    }
+    agora = wm_now();
+    n = drenar(in, out, max, agora);
+
+    /* O "longo" do power não depende de mais nenhum evento: se a tecla está
+     * pressionada há 3 s, avisa agora. */
+    if (n < max && in->power_pressionado && !in->power_longo_emitido
+        && agora - in->power_desde >= POWER_LONGO_SEGUNDOS) {
+        in->power_longo_emitido = true;
+        out[n].key = WM_KEY_POWER_LONGO;
+        out[n].soltou = false;
+        out[n].usb = false;
+        n++;
     }
 
     /* Auto-repeat do analógico (segurar para navegar). */
@@ -326,25 +409,15 @@ int input_poll(Input *in, struct KeyEvent *out, int max, int timeout_ms)
         ts.tv_sec = timeout_ms / 1000;
         ts.tv_nsec = (long) (timeout_ms % 1000) * 1000000L;
         nanosleep(&ts, NULL);
-        /* Segunda passada: um único evento pode ter chegado durante o sleep. */
-        for (int i = 0; i < in->n_fontes && n < max; i++) {
-            struct input_event ev;
-            while (read(in->fontes[i].fd, &ev, sizeof(ev)) == (ssize_t) sizeof(ev)) {
-                if (ev.type != EV_KEY || ev.value == 2) {
-                    continue;
-                }
-                {
-                    bool digital = false;
-                    int acao = traduzir(ev.code, &digital);
-                    if (acao == WM_KEY_NENHUMA) {
-                        continue;
-                    }
-                    out[n].key = acao;
-                    out[n].soltou = (ev.value == 0);
-                    out[n].usb = digital || !in->fontes[i].eh_gamepad;
-                    n++;
-                }
-            }
+        n = drenar(in, out, max, wm_now());
+        /* Apertar o power e soltar dentro do sleep ainda precisa contar. */
+        if (n < max && in->power_pressionado && !in->power_longo_emitido
+            && wm_now() - in->power_desde >= POWER_LONGO_SEGUNDOS) {
+            in->power_longo_emitido = true;
+            out[n].key = WM_KEY_POWER_LONGO;
+            out[n].soltou = false;
+            out[n].usb = false;
+            n++;
         }
     }
     return n;

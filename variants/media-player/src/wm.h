@@ -155,6 +155,11 @@ void drm_close(Drm *d);
 /* Copia o canvas para o framebuffer aplicando a rotação e faz page flip
  * (bloqueante, espera o vblank). Devolve false se o flip falhou. */
 bool drm_present(Drm *d, const Canvas *c);
+/* Liga/desliga a saída (propriedade DPMS do conector). Desligar a saída é o que
+ * economiza bateria de verdade: o painel para de ser varrido. */
+bool drm_dpms(Drm *d, bool ligado);
+/* Quantas vezes o flip falhou (0 = saudável). */
+int drm_falhas(const Drm *d);
 
 /* --------------------------------------------------------------- audio --- */
 
@@ -271,6 +276,10 @@ void radio_bt_power(Radio *r, bool ligar);
 void radio_bt_scan(Radio *r);
 void radio_bt_connect(Radio *r, const char *mac);
 
+/* Piso de brilho do backlight (%). Abaixo disso o painel fica ilegível; para
+ * economizar bateria existe o DPMS off ("apagar a tela"). */
+#define WM_BRILHO_MIN 10
+
 /* --------------------------------------------------------------- input --- */
 enum {
     WM_KEY_NENHUMA = 0,
@@ -290,7 +299,11 @@ enum {
     WM_KEY_PG_CIMA,
     WM_KEY_SAIR,
     WM_KEY_APAGAR,
-    WM_KEY_ENTER
+    WM_KEY_ENTER,
+    WM_KEY_PULO_PROX,    /* L1/R1: próxima faixa/álbum; no vídeo, avançar */
+    WM_KEY_PULO_ANT,     /* L1/R1: faixa/álbum anterior; no vídeo, voltar */
+    WM_KEY_POWER_CURTO,  /* pwrkey: toque = apagar/acordar a tela */
+    WM_KEY_POWER_LONGO   /* pwrkey segurado >= 3 s: diálogo de desligar */
 };
 
 struct KeyEvent {
@@ -341,9 +354,16 @@ enum {
     WM_ACAO_DESLIGAR,
     WM_ACAO_REINICIAR,
     WM_ACAO_RESSCAN,
-    WM_ACAO_BRILHO
+    WM_ACAO_BRILHO,
+    WM_ACAO_TELA_APAGAR,
+    WM_ACAO_TELA_ACENDER
 };
 int ui_handle_key(Ui *u, const struct KeyEvent *ev);
+/* Brilho atual do backlight em %, -1 quando não há backlight. Usado para
+ * restaurar o nível ao acender a tela depois do DPMS off. */
+int ui_brilho(Ui *u);
+/* true quando a tela está apagada (DPMS off): o main deixa de desenhar. */
+bool ui_tela_apagada(Ui *u);
 /* Pedidos de mídia que a UI faz (tocar a faixa N da lista filtrada, etc.). */
 const char *ui_want_play(Ui *u, double *seek_to);
 double ui_want_seek(Ui *u, bool *absoluto);

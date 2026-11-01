@@ -169,12 +169,54 @@ PY
     fi
 done
 
-echo "== 4. navegacao da UI (--selftest) =="
-if "$BIN" --config "$TMP/walkmam.conf" --selftest 2>/dev/null | grep -q 'FALHA'; then
-    falha "o --selftest acusou falha de navegacao"
-    "$BIN" --config "$TMP/walkmam.conf" --selftest 2>/dev/null | sed 's/^/    /'
+# O menu de configurações é desenhado por cima (overlay). Uma captura só da aba
+# não pega erro de layout nem de fonte nele — e é a tela que mais mudou.
+if "$BIN" --config "$TMP/walkmam.conf" --menu \
+    --screenshot "$TMP/menu.ppm" >/dev/null 2>&1; then
+    RES=$(python3 - "$TMP/menu.ppm" <<'PY'
+import sys
+with open(sys.argv[1], 'rb') as f:
+    if f.readline().strip() != b'P6':
+        print(0); raise SystemExit
+    w, h = map(int, f.readline().split())
+    f.readline()
+    d = f.read()
+if len(d) != w * h * 3:
+    print(0); raise SystemExit
+# O menu escurece o fundo mas mantém o painel: muitas cores, mas nenhuma
+# dominando a tela toda.
+cores = {d[i:i+3] for i in range(0, len(d), 3 * 37)}
+print(len(cores))
+PY
+)
+    if [ "${RES:-0}" -ge 30 ] 2>/dev/null; then
+        ok "menu de configuracoes: $RES cores distintas"
+    else
+        falha "menu de configuracoes: canvas suspeito (${RES:-?} cores)"
+    fi
 else
-    ok "navegacao: abas, seleção, volume, tela cheia e tecla liberada"
+    falha "menu de configuracoes nao desenhou"
+fi
+
+echo "== 4. navegacao e controles da UI (--selftest) =="
+# O exit code é o sinal principal: o --selftest devolve != 0 quando qualquer
+# caso falha. O grep de 'FALHA' fica como rede de segurança — só olhar o texto
+# já deixou uma falha passar batido quando a mensagem mudou.
+SAIDA=$("$BIN" --config "$TMP/walkmam.conf" --selftest 2>/dev/null)
+RC=$?
+if [ "$RC" -ne 0 ] || printf '%s' "$SAIDA" | grep -q 'FALHA'; then
+    falha "o --selftest acusou falha de navegacao (rc=$RC)"
+    printf '%s\n' "$SAIDA" | sed 's/^/    /'
+else
+    N_OK=$(printf '%s' "$SAIDA" | grep -c '^  ok')
+    QTD=$(printf '%s' "$SAIDA" | grep -c -e '^  ok' -e '^  FALHA' -e '^  pulado')
+    if [ "$QTD" -lt 20 ]; then
+        # Sem isso um selftest que aborta cedo (biblioteca vazia) "passa".
+        falha "o --selftest rodou so $QTD caso(s); esperado 20+"
+        printf '%s\n' "$SAIDA" | sed 's/^/    /'
+    else
+        ok "navegacao: $N_OK casos (abas, volume, tela cheia, power, menu, brilho, L1/R1)"
+    fi
 fi
 
 echo "== 5. decodificador =="
