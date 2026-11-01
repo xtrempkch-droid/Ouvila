@@ -98,8 +98,11 @@ Regras:
    **mantidos de propósito**: são ~800 identificadores de UI, não são a marca, e não há
    como compilar o binário aqui (`libdrm`/`ffmpeg`/`freetype`/`alsa` ausentes) para
    validar a troca. Se for renomear, faça num commit isolado e valide no aparelho.
-4. O repositório no GitHub precisa ser renomeado **na interface** (Settings → Rename);
-   o `origin` local ainda aponta para o nome antigo e passa a depender do redirect.
+4. O repositório no GitHub **já foi renomeado** e hoje é
+   `git@github.com:xtrempkch-droid/Ouvila.git`. Se o seu clone vier de antes, rode
+   `git remote set-url origin git@github.com:xtrempkch-droid/Ouvila.git` — a API do
+   GitHub responde **301** no nome antigo, então ferramenta que não segue redirect
+   falha com `KeyError: workflow_runs` em vez de dar um erro claro.
 5. **Regravar o cartão** depois desta mudança: nomes de serviço e de arquivo mudaram, e
    não existe caminho de atualização in-place.
 
@@ -1294,9 +1297,8 @@ empurrar qualquer commit para a `main`:
   script instalado e o `systemctl enable` batendo com o nome do arquivo; leitura do
   `ouvila.conf` exercitada na prática (valor explícito vence, ausente cai no `auto`
   por modelo). Também corrigi um link markdown quebrado que eu tinha deixado no §0.
-- **Não fiz (precisa de mão humana):** renomear o repositório no GitHub
-  (Settings → Rename para `Ouvila_RK3566`; o `origin` local ainda aponta para o nome
-  antigo e passa a depender do redirect).
+- **Repositório no GitHub:** renomeado pelo usuário no mesmo dia. Nome atual:
+  `xtrempkch-droid/Ouvila` (o `git remote` local foi apontado para lá).
 - **Pendente / próximo:** (1) renomear o repo e ajustar `git remote set-url`;
   (2) gerar imagem nova e gravar — **é preciso regravar o cartão**, porque os nomes de
   serviço/arquivo mudaram e não há caminho de atualização in-place; (3) opcionalmente
