@@ -161,6 +161,22 @@ static void biquad_peaking(Biquad *q, int freq, float db, int rate)
 
 static void recalcular(void)
 {
+    /* Sem taxa conhecida (saída de áudio desligada, --screenshot) não há filtro
+     * possível: os coeficientes ficariam com divisão por zero. Fica tudo em
+     * passagem direta até alguém chamar dsp_init() com a taxa real. */
+    if (g.rate <= 0) {
+        for (int c = 0; c < EQ_MAX_CANAIS; c++) {
+            for (int b = 0; b < WM_EQ_BANDAS; b++) {
+                Biquad *q = &g.eq[c][b];
+
+                q->b0 = 1.0f;
+                q->b1 = q->b2 = q->a1 = q->a2 = 0.0f;
+                q->ativo = false;
+            }
+        }
+        g.preamp = 1.0f;
+        return;
+    }
     for (int c = 0; c < EQ_MAX_CANAIS; c++) {
         for (int b = 0; b < WM_EQ_BANDAS; b++) {
             biquad_peaking(&g.eq[c][b], wm_eq_freqs[b], g.ganho_db[b], g.rate);
