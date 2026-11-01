@@ -35,6 +35,12 @@ O que mudou:
 7. **5 temas** (os protótipos de `variants/media-player/layout`) como dados; nenhuma cor
    fixa no código da UI.
 
+**Imagem publicada:** `media-player-v0.3`, **204,6 MB** (cresceu de 177 MB: agora leva
+`fonts-noto-core`, `fonts-wqy-zenhei` e `libharfbuzz0b`). Run `41303887981`, todos os
+passos verdes — inclusive os testes do app no runner e o cross arm64 dentro do rootfs.
+A `main` tem dois ajustes posteriores à tag (guarda do `dsp` com taxa zero e a linha de
+álbum mais alta); eles são cosméticos/defensivos e não mudam o uso normal.
+
 **O que testar com a imagem nova (v0.3):**
 
 - **power** curto (apaga/acende) e 3 s (diálogo de desligar, foco começa em Cancelar);

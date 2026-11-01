@@ -1192,7 +1192,15 @@ outro commit resolve sem force-push na branch. Para conferir se o build nasceu, 
     host) — na máquina do CI as dependências vêm todas do apt e são consistentes;
   - YAML do workflow parseado (`yaml.safe_load`) e `bash -n` no
     `tools/test-media-player.sh`.
+- **CI (tag `media-player-v0.3`): todos os passos verdes.** Run `41303887981`: testes do
+  app (nativo, no runner), kernel, preflight, rootfs (cross arm64 + qemu) e imagem. A
+  release `media-player-v0.3` saiu com **204,6 MB** — subiu de 177 MB porque agora levam
+  `fonts-noto-core` + `fonts-wqy-zenhei` (~58 MB instalados) e o `libharfbuzz0b`.
 - **Pendente / próximo (precisa da imagem no aparelho):** árabe/hindi/chinês na tela de
   verdade, equalizador audível, Wi-Fi/BT pelo menu na X55 (na X35H devem aparecer como
   "Ausente"), relógio aplicando (`clock_settime` precisa de root — o app roda como root,
   mas sem `CAP_SYS_TIME` falha e o log registra), 5 temas e navegação por álbum.
+- **Ficou para a próxima tag (não está na v0.3, está na `main`):** o guarda de
+  `dsp.c` para `rate == 0` e a linha de álbum mais alta na Biblioteca. Nenhum dos dois
+  muda o comportamento normal (o primeiro só age com a saída de áudio desligada; o
+  segundo é cosmético).
