@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<addon id="script.ouvila.radio" name="Ouvila Radio" version="1.0.0" provider-name="Ouvila RK3566">
+  <requires>
+    <import addon="xbmc.python" version="3.0.0"/>
+  </requires>
+  <extension point="xbmc.python.script" library="default.py">
+    <provides>executable</provides>
+  </extension>
+  <extension point="xbmc.addon.metadata">
+    <summary lang="en_GB">Manage Wi-Fi and Bluetooth inside Kodi</summary>
+    <summary lang="pt_BR">Gerencia Wi-Fi e Bluetooth dentro do Kodi</summary>
+    <description lang="en_GB">Kodi has no radio manager on Linux, so this add-on drives NetworkManager (nmcli) and BlueZ (bluetoothctl) directly: scan and join Wi-Fi networks, list/pair/connect Bluetooth devices. Installed by the Ouvila RK3566 image.</description>
+    <description lang="pt_BR">O Kodi nao tem gerenciador de radio no Linux, entao este add-on fala direto com o NetworkManager (nmcli) e o BlueZ (bluetoothctl): procurar e conectar redes Wi-Fi, listar/parear/conectar dispositivos Bluetooth. Faz parte da imagem Ouvila RK3566.</description>
+    <platform>linux</platform>
+    <license>GPL-2.0-only</license>
+  </extension>
+</addon>

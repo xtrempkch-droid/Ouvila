@@ -10,7 +10,7 @@
 #
 # O passo "Preflight da variante" do workflow confere exatamente isso.
 #
-# Aqui só entram BIBLIOTECAS: o app é o binário walkmam-media (compilado no
+# Aqui só entram BIBLIOTECAS: o app é o binário ouvila-media (compilado no
 # runner a partir de variants/media-player/src). Não há compositor, navegador
 # nem player externo para instalar — é isso que faz a variante ser um binário só.
 

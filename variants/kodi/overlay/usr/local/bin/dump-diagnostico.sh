@@ -54,8 +54,8 @@ capture() {
     printf '%s: ' "$st"; cat "$st" 2>&1
   done
   echo
-  echo "----- rotação efetiva (walkmam.conf + weston.ini) -----"
-  tr -d '\r' < /boot/walkmam.conf 2>&1 | grep -i transform || echo "(sem display_transform)"
+  echo "----- rotação efetiva (ouvila.conf + weston.ini) -----"
+  tr -d '\r' < /boot/ouvila.conf 2>&1 | grep -i transform || echo "(sem display_transform)"
   grep -i '^transform' /run/kodi-wayland/weston.ini 2>&1 || echo "(weston.ini sem transform)"
   echo
   echo "----- USB: estado dos UDC (gadget) -----"
@@ -146,8 +146,8 @@ capture() {
   echo "----- /var/log/weston.log (procure Invalid transform) -----"
   cat /var/log/weston.log 2>&1 || echo "(arquivo não existe ainda)"
   echo
-  echo "----- /boot/walkmam.conf -----"
-  cat /boot/walkmam.conf 2>&1 || echo "(arquivo não existe)"
+  echo "----- /boot/ouvila.conf -----"
+  cat /boot/ouvila.conf 2>&1 || echo "(arquivo não existe)"
   echo
   echo "----- weston.ini efetivo (gerado no boot) -----"
   cat /run/kodi-wayland/weston.ini 2>&1 || echo "(arquivo não existe)"

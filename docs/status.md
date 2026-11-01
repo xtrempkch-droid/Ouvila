@@ -23,7 +23,7 @@ O que mudou:
    como o usuário pediu ("na lista da biblioteca tem que ser navegável para escolher o
    álbum").
 3. **Modos de reprodução** no quinto botão dos controles: em ordem, repetir álbum,
-   repetir faixa e aleatória. Gravado em `/boot/walkmam-media.conf`.
+   repetir faixa e aleatória. Gravado em `/boot/ouvila-media.conf`.
 4. **Equalizador de 10 bandas** no menu → Som, com 8 predefinições, pré-amplificação e
    limitador. **Melhoria de som (modo neural)** aparece **desativada** porque o mainline
    não tem `/dev/rknpu` — era o pedido explícito ("em caso de não disponibilidade o
@@ -74,7 +74,7 @@ binário só) funciona no hardware. Os problemas eram de controle e de fim de fa
    cada 1-2 s) — agora abre a próxima da lista; no vídeo volta para a grade;
 2. **ligar/desligar** era na aba Sistema → foi para o **botão de power** (toque curto
    apaga/acende a tela com DPMS off, 3 s abre a confirmação de desligar). Exige o
-   drop-in `logind.conf.d/10-walkmam-media-power.conf` (`HandlePowerKey=ignore`),
+   drop-in `logind.conf.d/10-ouvila-media-power.conf` (`HandlePowerKey=ignore`),
    senão o systemd desliga o aparelho antes do app ver a tecla;
 3. a aba Sistema virou **só informação** e todo ajuste foi para o **menu do SELECT** —
    era ali que o botão de volume se confundia com o brilho;
@@ -205,7 +205,7 @@ O que mudou (build novo necessário):
   `mmc1 mmc0`, então sistema no 2º slot nunca iniciava). Ordem escolhida: SD1 → eMMC →
   SD2.
 * **Imagem 3584 MiB** (era 4096): não cabia no eMMC de 3776 MiB.
-* **`walkmam-extra-storage.service`**: monta os slots que não têm o sistema em
+* **`ouvila-extra-storage.service`**: monta os slots que não têm o sistema em
   `/storage/sdcard<N>` e liga em `/boot/roms/sdcard<N>` (aparece no RetroArch). Detecta
   cartão inserido depois do boot religando o slot (`unbind`/`bind`) — necessário porque
   os slots não têm `cd-gpios`. Testado no aparelho: montou, ligou, desmontou ao sumir o
@@ -232,7 +232,7 @@ corrigidos e **confirmados no aparelho**:
 | Analógicos (os dois) | **OK** (teste do usuário) |
 | X35H (mesmo cartão): 640x480, `normal` | **OK** — sessão de 81 s (antes morria em 7,5 s) |
 | Jogo de verdade (carregar ROM) | **não testado** — próximo passo |
-| Sair pelo menu **desliga** o aparelho | **CONFIRMADO no aparelho (2026-10-28)**: com o launcher novo instalado no X35H, "Quit RetroArch" no menu → tela "Desligando..." → **o aparelho desligou de verdade** (o gadget USB sumiu do PC e a rede caiu, não foi queda de rede). Antes, fechar só matava o processo e deixava o aparelho ligado, sem interface no `tty1`. `retroarch_exit=stay` em `/boot/walkmam.conf` volta ao comportamento antigo |
+| Sair pelo menu **desliga** o aparelho | **CONFIRMADO no aparelho (2026-10-28)**: com o launcher novo instalado no X35H, "Quit RetroArch" no menu → tela "Desligando..." → **o aparelho desligou de verdade** (o gadget USB sumiu do PC e a rede caiu, não foi queda de rede). Antes, fechar só matava o processo e deixava o aparelho ligado, sem interface no `tty1`. `retroarch_exit=stay` em `/boot/ouvila.conf` volta ao comportamento antigo |
 
 As duas correções **já estão na imagem #119**. Se for gerar outra no futuro, o caminho
 é `git tag retroarch-vN && git push origin retroarch-vN` (push na `main` gera `kodi`).
@@ -292,7 +292,7 @@ são idênticos aos da X55.
 1. Pegue o artifact `rk3566-x55-mainline-sdcard-image` do **run #100 (success)**
    em Actions. Ele traz: boot ativo da X55 (`display_transform=rotate-90`),
    **SSH com senha liberado**, Kodi com `--socket=wayland-0`, áudio (I2S) habilitado,
-   **Bluetooth funcionando** (config UART gerada no build), o **add-on Walkmam Radio**
+   **Bluetooth funcionando** (config UART gerada no build), o **add-on Ouvila Radio**
    dentro do Kodi e os logs de diagnóstico. **Não** use runs com `failure`.
 2. Grave no cartão, ligue o cabo USB e faça os testes da seção **"Testes a fazer"**.
 3. Confirme que o **SSH** entra: `ssh root@10.55.0.1` (senha `root`). Se entrar, dá
@@ -312,7 +312,7 @@ são idênticos aos da X55.
 | #108 | `e1788c6` (tag v0.2) | failure | asserção do retroarch.cfg (barra final) |
 | #106 | `04c32b1` (tag v0.1) | failure | 4 cores inexistentes para arm64 |
 | #105 | `d42c856` | success | kodi 356 MB (após refactor) |
-| #100 | `38c9e05` (BT + add-on) | **success** | **use esta**: Bluetooth corrigido (config UART gerado) + add-on Walkmam Radio com o teclado da senha certo; 356 MB |
+| #100 | `38c9e05` (BT + add-on) | **success** | **use esta**: Bluetooth corrigido (config UART gerado) + add-on Ouvila Radio com o teclado da senha certo; 356 MB |
 | #99 | `5ec2ef9` (add-on) | success | add-on incluído, mas com o bug do teclado (só números) |
 | #98 | `f0902f0` (BT config) | success | corrige o Bluetooth; ainda sem o add-on |
 | #97 | `cbafb85` (docs stretch) | **success** | imagem testada: Wi-Fi ok no boot; BT ainda sem address |
@@ -371,7 +371,7 @@ aparelhos, trocando o `FDT` no `extlinux.conf`.
   (`dtbs/rk3566-powkiddy-x35s-rocknix.dtb`, oficial da ROCKNIX com HDMI desabilitado, ou
   `dtbs/rk3566-powkiddy-x35s-nosso.dtb`, o nosso compilado). Se o DTB da X55 não for
   gerado, o step falha em vez de criar uma imagem com o FDT ausente.
-- **`walkmam.conf`** na raiz da partição FAT, com `display_transform=rotate-90` (X55).
+- **`ouvila.conf`** na raiz da partição FAT, com `display_transform=rotate-90` (X55).
   Para X35S/X35H, troque para `normal`.
 - **Entradas de boot alternativas** (presentes, mas não ativas) na pasta `extlinux/` da
   partição FAT:
@@ -393,23 +393,23 @@ aparelhos, trocando o `FDT` no `extlinux.conf`.
   vem de `variants/kodi/overlay/usr/local/bin/dump-diagnostico.sh` (o CI o instala com
   `install`; não há mais cópia inline no `build.yml`).
 - **Acesso:** a senha do `root` é `root` e o SSH está habilitado. A imagem instala
-  `/etc/ssh/sshd_config.d/10-walkmam.conf` com `PermitRootLogin yes` +
+  `/etc/ssh/sshd_config.d/10-ouvila.conf` com `PermitRootLogin yes` +
   `PasswordAuthentication yes` (o Debian 12 bloqueia login do root por senha por
   padrão — sem esse drop-in, `root:root` é recusado). Pelo cabo USB o aparelho fica
   em **10.55.0.1**. Ver "Segurança" no `docs/roadmap.md`.
-- **Painel web de Wi-Fi/Bluetooth:** `walkmam-webui.service` (busybox httpd) na porta
-  **8088**, servindo `variants/kodi/overlay/usr/local/share/walkmam-webui/`. Acesse
+- **Painel web de Wi-Fi/Bluetooth:** `ouvila-webui.service` (busybox httpd) na porta
+  **8088**, servindo `variants/kodi/overlay/usr/local/share/ouvila-webui/`. Acesse
   `http://10.55.0.1:8088` pelo cabo (ou pelo IP do Wi-Fi) para procurar/conectar redes
   e parear dispositivos Bluetooth — o Kodi em si não gerencia rádio.
   Wi-Fi usa `nmcli`/`wpa_supplicant`; BT usa `bluetoothctl`/`bluez`.
-- **Add-on dentro do Kodi (`script.walkmam.radio`, "Walkmam Radio"):** o Kodi 20 no
+- **Add-on dentro do Kodi (`script.ouvila.radio`, "Ouvila Radio"):** o Kodi 20 no
   Linux **não tem** gerenciador de rádio (o de Wi-Fi existe só nos builds
   Windows/Android), então o projeto traz um add-on Python em
-  `variants/kodi/overlay/usr/share/kodi/addons/script.walkmam.radio/`. Ele fala direto
+  `variants/kodi/overlay/usr/share/kodi/addons/script.ouvila.radio/`. Ele fala direto
   com o `nmcli` (Wi-Fi: redes, conectar, desconectar) e o `bluetoothctl` (BT: ligar,
   procurar, parear, conectar, ficar visível). Aparece em **Add-ons → Add-ons de
   programas**. Validado no aparelho: o `CAddonMgr` registra
-  `script.walkmam.radio v1.0.0 installed` e as leituras reais (redes Wi-Fi, controlador
+  `script.ouvila.radio v1.0.0 installed` e as leituras reais (redes Wi-Fi, controlador
   BT, scan) funcionam. A **GUI** também foi validada: via JSON-RPC do Kodi (TCP **9090**)
   o add-on abriu o diálogo, a opção *Wi-Fi: procurar redes* rodou o scan e listou redes
   reais, sem traceback. Dá para repetir por SSH: `Addons.ExecuteAddon` +
@@ -455,7 +455,7 @@ Causa raiz confirmada no aparelho: o **Weston 10.0.1 criava o socket como
 `xdg_output` lógico **1280x720** (landscape).
 
 **Falta só a confirmação visual:** se a imagem estiver de cabeça para baixo, troque
-`display_transform` em `walkmam.conf` para `rotate-270` (já está `rotate-90`, validado).
+`display_transform` em `ouvila.conf` para `rotate-270` (já está `rotate-90`, validado).
 
 ### 0.1 Wi-Fi e Bluetooth (imagem nova, 2026-10-24)
 
@@ -466,7 +466,7 @@ Causa raiz confirmada no aparelho: o **Weston 10.0.1 criava o socket como
 3. Bluetooth: **Ligar** → **Procurar dispositivos** → **Parear**. Ele pareia, confia
    e conecta. Se o dispositivo pedir confirmação, aceite/repetir o pareamento.
 4. Se algo falhar, me mande: `dmesg | grep -iE 'rtw88|hci0|btrtl'`,
-   `nmcli dev wifi list`, `bluetoothctl show` e `journalctl -u walkmam-webui`.
+   `nmcli dev wifi list`, `bluetoothctl show` e `journalctl -u ouvila-webui`.
 
 ### 1. USB gadget na X35H (prioridade)
 
@@ -498,7 +498,7 @@ do `diagnostico.txt`, que traz o `dr_mode` do device tree em uso.
 
 1. Não precisa copiar `extlinux.conf`: a imagem já sai com o DTB da X55 **e** a rotação
    da X55 (`display_transform=rotate-90`) ativos.
-2. Se a interface ficar de cabeça para baixo, edite `walkmam.conf` na partição FAT e
+2. Se a interface ficar de cabeça para baixo, edite `ouvila.conf` na partição FAT e
    troque para `display_transform=rotate-90`.
 3. Me diga **qual valor deixa a interface correta** e, se possível, mande o trecho do
    `weston.log` (ele está no `diagnostico.txt`) — nele aparece se houve

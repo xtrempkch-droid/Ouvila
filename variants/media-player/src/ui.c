@@ -2952,7 +2952,7 @@ Ui *ui_create(Canvas *canvas, Library *lib, AudioOut *audio)
         }
     }
 
-    /* Ajustes que o app grava em /boot/walkmam-media.conf. O idioma e o tema
+    /* Ajustes que o app grava em /boot/ouvila-media.conf. O idioma e o tema
      * precisam valer ANTES do primeiro desenho; o EQ e o modo podem vir depois,
      * mas são baratos e ficam aqui. */
     wm_settings_load();

@@ -1,7 +1,7 @@
 /* main.c — inicialização e laço principal do app de mídia.
  *
  * Ciclo de vida:
- *   1. lê /boot/walkmam.conf (rotação, volume, pastas de mídia)
+ *   1. lê /boot/ouvila.conf (rotação, volume, pastas de mídia)
  *   2. abre o DRM/KMS e cria o canvas do tamanho JÁ GIRADO
  *   3. abre o ALSA, varre a biblioteca em segundo plano, abre o gamepad
  *   4. laço: espera tecla (timeout curto) -> atualiza sistema -> desenha ->
@@ -290,8 +290,8 @@ fim:
 
 static void uso(void)
 {
-    printf("walkmam-media " WM_VERSION " — app de mídia único (DRM/ALSA/FFmpeg)\n\n"
-           "Uso: walkmam-media [opções]\n"
+    printf("ouvila-media " WM_VERSION " — app de mídia único (DRM/ALSA/FFmpeg)\n\n"
+           "Uso: ouvila-media [opções]\n"
            "  --screenshot ARQ.ppm    desenha uma vez e grava o canvas (PPM)\n"
            "  --screenshot-size WxH   tamanho do canvas no modo --screenshot\n"
            "  --tab NOME              aba inicial (musica|videos|biblioteca|sistema)\n"
@@ -301,7 +301,7 @@ static void uso(void)
            "  --scan                 varre a biblioteca e lista os arquivos\n"
            "  --selftest             exercita a navegacao/estado da UI e sai\n"
            "  --menu                 com --screenshot: abre o menu de configuracoes\n"
-           "  --config ARQ           caminho de walkmam.conf (padrão /boot/walkmam.conf)\n"
+           "  --config ARQ           caminho de ouvila.conf (padrão /boot/ouvila.conf)\n"
            "  --play ARQ             abre e toca um arquivo direto (sem UI)\n"
            "  --frame-out ARQ.ppm    com --play: grava o quadro de vídeo em ARQ\n"
            "  --frame-at SEGUNDOS    instante do quadro (padrão 1.0 s)\n"
@@ -741,7 +741,7 @@ static int wm_selftest(Ui *ui, Canvas *canvas, Library *lib)
 int main(int argc, char **argv)
 {
     WmConfig cfg;
-    char conf_path[WM_PATH_MAX] = "/boot/walkmam.conf";
+    char conf_path[WM_PATH_MAX] = "/boot/ouvila.conf";
     const char *screenshot = NULL;
     int screenshot_w = 1280, screenshot_h = 720;
     int tab_inicial = 0;
@@ -774,7 +774,7 @@ int main(int argc, char **argv)
             return 0;
         }
         if (strcmp(argv[i], "--version") == 0) {
-            printf("walkmam-media " WM_VERSION "\n");
+            printf("ouvila-media " WM_VERSION "\n");
             return 0;
         }
         if (strcmp(argv[i], "--list-devices") == 0) {
@@ -833,7 +833,7 @@ int main(int argc, char **argv)
     /* Só erros do FFmpeg: o nível padrão imprime avisos por quadro em vídeo
      * com B-frames e enche o log do cartão. */
     av_log_set_level(AV_LOG_ERROR);
-    wm_log("walkmam-media " WM_VERSION " iniciando (config %s)", cfg.conf_path);
+    wm_log("ouvila-media " WM_VERSION " iniciando (config %s)", cfg.conf_path);
 
     if (listar) {
         Input *in = input_open();
@@ -1007,7 +1007,7 @@ int main(int argc, char **argv)
         return 1;
     }
     ui_set_radio(ui, radio);
-    /* Os argumentos vencem o que está gravado em /boot/walkmam-media.conf: é o
+    /* Os argumentos vencem o que está gravado em /boot/ouvila-media.conf: é o
      * que permite gerar as capturas de teste com qualquer tema/idioma. */
     if (idioma_inicial >= 0) {
         wm_lang_set(idioma_inicial);

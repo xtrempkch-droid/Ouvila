@@ -9,7 +9,7 @@
 #   5. o launcher trata saída normal, falha e sessão curta
 #
 # Uso:
-#   tools/test-media-player.sh                     # usa ./build/walkmam-media
+#   tools/test-media-player.sh                     # usa ./build/ouvila-media
 #   tools/test-media-player.sh caminho/do/binario
 #
 # Dependências: python3 (para gerar/conferir imagens), gst-launch-1.0 opcional
@@ -17,7 +17,7 @@
 set -uo pipefail
 
 ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-BIN=${1:-$ROOT_DIR/build/walkmam-media}
+BIN=${1:-$ROOT_DIR/build/ouvila-media}
 TMP=$(mktemp -d)
 FALHAS=0
 PULADOS=0
@@ -103,7 +103,7 @@ open(base + "/music/Album/folder.jpg", "wb").write(b"\xff\xd8\xff\xe0" + b"\x00"
 open(base + "/videos/filme.mkv", "wb").write(b"\x00" * 2048)
 PY
 
-cat > "$TMP/walkmam.conf" << CONF
+cat > "$TMP/ouvila.conf" << CONF
 display_transform=normal
 media_volume=65
 media_audio_out=-
@@ -112,7 +112,7 @@ media_exit=stay
 CONF
 
 echo "== 2. biblioteca =="
-SAIDA=$("$BIN" --config "$TMP/walkmam.conf" --scan 2>/dev/null)
+SAIDA=$("$BIN" --config "$TMP/ouvila.conf" --scan 2>/dev/null)
 if echo "$SAIDA" | grep -q "Neon Horizon"; then
     ok "ID3v2 (mp3) lido"
 else
@@ -142,7 +142,7 @@ fi
 echo "== 3. UI (desenho offline) =="
 for aba in musica videos biblioteca sistema; do
     PPM="$TMP/aba-$aba.ppm"
-    if ! "$BIN" --config "$TMP/walkmam.conf" --tab "$aba" --screenshot "$PPM" >/dev/null 2>&1; then
+    if ! "$BIN" --config "$TMP/ouvila.conf" --tab "$aba" --screenshot "$PPM" >/dev/null 2>&1; then
         falha "aba $aba nao desenhou"
         continue
     fi
@@ -171,7 +171,7 @@ done
 
 # O menu de configurações é desenhado por cima (overlay). Uma captura só da aba
 # não pega erro de layout nem de fonte nele — e é a tela que mais mudou.
-if "$BIN" --config "$TMP/walkmam.conf" --menu \
+if "$BIN" --config "$TMP/ouvila.conf" --menu \
     --screenshot "$TMP/menu.ppm" >/dev/null 2>&1; then
     RES=$(python3 - "$TMP/menu.ppm" <<'PY'
 import sys
@@ -207,7 +207,7 @@ HASHES=""
 IDIOMAS_OK=0
 for idioma in pt en zh hi es ar bn id ur fr; do
     PPM="$TMP/idioma-$idioma.ppm"
-    if ! "$BIN" --config "$TMP/walkmam.conf" --tab sistema --idioma "$idioma" \
+    if ! "$BIN" --config "$TMP/ouvila.conf" --tab sistema --idioma "$idioma" \
         --screenshot "$PPM" >/dev/null 2>&1; then
         falha "idioma $idioma nao desenhou"
         continue
@@ -233,7 +233,7 @@ fi
 # O árabe tem de sair da direita para a esquerda e em forma ligada. Comparar a
 # largura de "مرحبا" com as mesmas letras separadas por espaço prova que o
 # HarfBuzz está juntando (sem shaping as duas medidas seriam iguais).
-if "$BIN" --config "$TMP/walkmam.conf" --selftest >/dev/null 2>&1; then
+if "$BIN" --config "$TMP/ouvila.conf" --selftest >/dev/null 2>&1; then
     ok "selftest com as traducoes carregadas"
 fi
 
@@ -241,7 +241,7 @@ TEMAS_OK=0
 TEMAS_HASH=""
 for tema in neon oled mono mono-glow vidro; do
     PPM="$TMP/tema-$tema.ppm"
-    if ! "$BIN" --config "$TMP/walkmam.conf" --tab musica --tema "$tema" \
+    if ! "$BIN" --config "$TMP/ouvila.conf" --tab musica --tema "$tema" \
         --screenshot "$PPM" >/dev/null 2>&1; then
         falha "tema $tema nao desenhou"
         continue
@@ -268,7 +268,7 @@ echo "== 4. navegacao e controles da UI (--selftest) =="
 # O exit code é o sinal principal: o --selftest devolve != 0 quando qualquer
 # caso falha. O grep de 'FALHA' fica como rede de segurança — só olhar o texto
 # já deixou uma falha passar batido quando a mensagem mudou.
-SAIDA=$("$BIN" --config "$TMP/walkmam.conf" --selftest 2>/dev/null)
+SAIDA=$("$BIN" --config "$TMP/ouvila.conf" --selftest 2>/dev/null)
 RC=$?
 if [ "$RC" -ne 0 ] || printf '%s' "$SAIDA" | grep -q 'FALHA'; then
     falha "o --selftest acusou falha de navegacao (rc=$RC)"
@@ -290,7 +290,7 @@ if command -v gst-launch-1.0 >/dev/null 2>&1; then
     if gst-launch-1.0 -q videotestsrc num-buffers=60 pattern=smpte \
         ! video/x-raw,width=320,height=180,framerate=30/1 ! x264enc tune=zerolatency \
         ! matroskamux ! filesink location="$TMP/media/videos/teste.mkv" >/dev/null 2>&1; then
-        if "$BIN" --config "$TMP/walkmam.conf" --play "$TMP/media/videos/teste.mkv" \
+        if "$BIN" --config "$TMP/ouvila.conf" --play "$TMP/media/videos/teste.mkv" \
              --frame-out "$TMP/quadro.ppm" --frame-at 0.5 >/dev/null 2>&1
         then
             CORES=$(python3 - "$TMP/quadro.ppm" <<'PY'
@@ -342,21 +342,21 @@ if [ ! -x "$LAUNCHER" ]; then
     falha "launcher ausente: $LAUNCHER"
 else
     mkdir -p "$TMP/fakebin"
-    printf '#!/bin/sh\nexit 0\n' > "$TMP/fakebin/walkmam-media"
+    printf '#!/bin/sh\nexit 0\n' > "$TMP/fakebin/ouvila-media"
     # Falha: status != 0 tem de sair != 0 (para o systemd ver a falha)
     printf '#!/bin/sh\nexit 3\n' > "$TMP/fakebin/falha"
-    chmod +x "$TMP/fakebin/walkmam-media" "$TMP/fakebin/falha"
+    chmod +x "$TMP/fakebin/ouvila-media" "$TMP/fakebin/falha"
 
     if MEDIA_BIN="$TMP/fakebin/falha" MEDIA_LOG="$TMP/launcher.log" \
-        WALKMAM_MIN_SEGUNDOS=0 "$LAUNCHER" >/dev/null 2>&1; then
+        OUVILA_MIN_SEGUNDOS=0 "$LAUNCHER" >/dev/null 2>&1; then
         falha "launcher devolveu 0 para um binario que falhou"
     else
         ok "launcher propaga falha do binario"
     fi
 
     # Sessão curta com status 0 não é sucesso (mesma regra do Kodi/RetroArch).
-    if MEDIA_BIN="$TMP/fakebin/walkmam-media" MEDIA_LOG="$TMP/launcher.log" \
-        WALKMAM_MIN_SEGUNDOS=10 "$LAUNCHER" >/dev/null 2>&1; then
+    if MEDIA_BIN="$TMP/fakebin/ouvila-media" MEDIA_LOG="$TMP/launcher.log" \
+        OUVILA_MIN_SEGUNDOS=10 "$LAUNCHER" >/dev/null 2>&1; then
         falha "launcher tratou sessao curta como sucesso"
     else
         ok "launcher trata sessao curta como falha"

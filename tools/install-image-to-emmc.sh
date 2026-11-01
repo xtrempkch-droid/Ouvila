@@ -1,5 +1,5 @@
 #!/bin/sh
-# Grava uma imagem do Walkmam no eMMC do aparelho (mmc0 / fe310000.mmc).
+# Grava uma imagem do Ouvila no eMMC do aparelho (mmc0 / fe310000.mmc).
 #
 # Por que um script: o eMMC destas placas tem 3776 MiB e a imagem tem 3584 MiB —
 # cabe, mas so por ~190 MiB de margem. Um dd maior que o disco escreve ate encher
@@ -18,7 +18,7 @@
 set -eu
 
 IMG=${1:-}
-EMMC=${WALKMAM_EMMC:-/dev/mmcblk0}
+EMMC=${OUVILA_EMMC:-/dev/mmcblk0}
 
 die() { echo "ERRO: $*" >&2; exit 1; }
 
@@ -34,7 +34,7 @@ _sys="/sys/class/block/$(basename "$EMMC")"
 _real=$(readlink -f "$_sys")
 case "$_real" in
     *fe310000.mmc*) ;;
-    *) die "$EMMC nao parece ser o eMMC (esperado algo sob fe310000.mmc; o sysfs diz ${_real:-nada}). Use WALKMAM_EMMC=... se souber o que esta fazendo." ;;
+    *) die "$EMMC nao parece ser o eMMC (esperado algo sob fe310000.mmc; o sysfs diz ${_real:-nada}). Use OUVILA_EMMC=... se souber o que esta fazendo." ;;
 esac
 _rootpart=$(awk '$2 == "/" { print $1; exit }' /proc/mounts)
 case "$_rootpart" in
@@ -61,7 +61,7 @@ _tam_img_mb=$(( _bytes / 1024 / 1024 ))
 echo "eMMC ($EMMC): ${_tam_disco_mb} MiB"
 echo "imagem ($IMG): ${_tam_img_mb} MiB"
 if [ "$_tam_img_mb" -gt "$_tam_disco_mb" ]; then
-    die "a imagem NAO cabe no eMMC (${_tam_img_mb} MiB > ${_tam_disco_mb} MiB). Gere com WALKMAM_IMAGE_SIZE_MB menor."
+    die "a imagem NAO cabe no eMMC (${_tam_img_mb} MiB > ${_tam_disco_mb} MiB). Gere com OUVILA_IMAGE_SIZE_MB menor."
 fi
 
 # 3) Confirmacao explicita: a operacao e destrutiva.

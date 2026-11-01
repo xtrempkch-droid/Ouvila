@@ -1,7 +1,7 @@
 #!/bin/sh
 # Launcher da variante "media-player" no tty1.
 #
-# A UI é o próprio binário walkmam-media (DRM/KMS + FFmpeg + ALSA). Não há
+# A UI é o próprio binário ouvila-media (DRM/KMS + FFmpeg + ALSA). Não há
 # compositor: este script só prepara o ambiente, registra o log no cartão e
 # trata a saída.
 #
@@ -11,7 +11,7 @@
 #   * o motivo de qualquer falha vai para /boot/media-player.log e para o tty1;
 #   * sessão curta com status 0 NÃO é "o usuário saiu": conta como falha.
 #
-# Configuração em /boot/walkmam.conf (partição FAT, editável no PC):
+# Configuração em /boot/ouvila.conf (partição FAT, editável no PC):
 #   media_exit=poweroff | stay   (padrão poweroff, comportamento de console)
 #   display_transform=auto | normal | rotate-90 | ...
 #   media_volume=0..100
@@ -20,25 +20,25 @@ set -eu
 
 export HOME=/root
 
-BIN=${MEDIA_BIN:-/usr/local/bin/walkmam-media}
+BIN=${MEDIA_BIN:-/usr/local/bin/ouvila-media}
 MEDIA_LOG=${MEDIA_LOG:-/boot/media-player.log}
-MIN_SEGUNDOS=${WALKMAM_MIN_SEGUNDOS:-10}
+MIN_SEGUNDOS=${OUVILA_MIN_SEGUNDOS:-10}
 
-# Helper compartilhado: leitura do walkmam.conf e escrita no tty1.
-WALKMAM_DISPLAY_LIB=${WALKMAM_DISPLAY_LIB:-/usr/local/share/walkmam/display.sh}
-if [ -r "$WALKMAM_DISPLAY_LIB" ]; then
-    . "$WALKMAM_DISPLAY_LIB"
+# Helper compartilhado: leitura do ouvila.conf e escrita no tty1.
+OUVILA_DISPLAY_LIB=${OUVILA_DISPLAY_LIB:-/usr/local/share/ouvila/display.sh}
+if [ -r "$OUVILA_DISPLAY_LIB" ]; then
+    . "$OUVILA_DISPLAY_LIB"
 else
     # A variante não depende do helper para funcionar (ele é só conveniência).
-    walkmam_say_tty() { { printf '\033[2J\033[H'; printf '%s\n' "$*"; } > /dev/tty1 2>/dev/null || true; }
-    walkmam_read_conf_key() {
-        [ -r /boot/walkmam.conf ] || return 0
-        sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" /boot/walkmam.conf \
+    ouvila_say_tty() { { printf '\033[2J\033[H'; printf '%s\n' "$*"; } > /dev/tty1 2>/dev/null || true; }
+    ouvila_read_conf_key() {
+        [ -r /boot/ouvila.conf ] || return 0
+        sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" /boot/ouvila.conf \
             | tail -n 1 | tr -d '\r[:space:]'
     }
 fi
 
-EXIT_ACTION=$(walkmam_read_conf_key media_exit) || EXIT_ACTION=
+EXIT_ACTION=$(ouvila_read_conf_key media_exit) || EXIT_ACTION=
 case "$EXIT_ACTION" in
     stay|none|shell) ;;
     *)               EXIT_ACTION=poweroff ;;
@@ -52,7 +52,7 @@ fi
 echo "===== $(date -Is) start-media-player =====" >> "$MEDIA_LOG"
 
 if [ ! -x "$BIN" ]; then
-    walkmam_say_tty "MEDIA-PLAYER: binário ausente em $BIN"
+    ouvila_say_tty "MEDIA-PLAYER: binário ausente em $BIN"
     echo "binario ausente: $BIN" >> "$MEDIA_LOG"
     exit 1
 fi
@@ -62,16 +62,16 @@ fi
 # Conflicts=getty@tty1.service e o getty do tty1 é mascarado na imagem.
 _inicio=$(date +%s)
 set +e
-"$BIN" --config /boot/walkmam.conf >> "$MEDIA_LOG" 2>&1
+"$BIN" --config /boot/ouvila.conf >> "$MEDIA_LOG" 2>&1
 status=$?
 set -e
 _durou=$(( $(date +%s) - _inicio ))
-echo "walkmam-media terminou com status $status apos ${_durou}s" >> "$MEDIA_LOG"
+echo "ouvila-media terminou com status $status apos ${_durou}s" >> "$MEDIA_LOG"
 
 if [ "$status" -eq 0 ] && [ "$_durou" -ge "$MIN_SEGUNDOS" ]; then
     if [ "$EXIT_ACTION" = poweroff ]; then
         echo "saida normal (status 0): desligando" >> "$MEDIA_LOG"
-        walkmam_say_tty "Desligando..."
+        ouvila_say_tty "Desligando..."
         sync
         if command -v systemctl >/dev/null 2>&1; then
             systemctl poweroff --no-block >> "$MEDIA_LOG" 2>&1 || true
@@ -86,5 +86,5 @@ if [ "$status" -eq 0 ]; then
     echo "sessao curta demais (${_durou}s): tratando como falha" >> "$MEDIA_LOG"
 fi
 
-walkmam_say_tty "MEDIA-PLAYER NAO ABRIU (status $status). Veja /boot/media-player.log"
+ouvila_say_tty "MEDIA-PLAYER NAO ABRIU (status $status). Veja /boot/media-player.log"
 exit 1

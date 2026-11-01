@@ -15,7 +15,7 @@
 #   WM_SYSROOT      diretório com usr/include e usr/lib da arquitetura (obrigatório no cross)
 #   WM_CROSS        prefixo do cross-compiler (padrão aarch64-linux-gnu-)
 #   WM_CC           compilador (padrão ${WM_CROSS}gcc, ou gcc no --native)
-#   WM_OUT          arquivo de saída (padrão build/walkmam-media)
+#   WM_OUT          arquivo de saída (padrão build/ouvila-media)
 #
 # Por que cross-compilar em vez de compilar dentro do rootfs: instalar
 # gcc + libavformat-dev dentro do rootfs Debian arm64 adicionaria ~500 MB à
@@ -26,7 +26,7 @@ set -euo pipefail
 
 ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 SRC_DIR="$ROOT_DIR/variants/media-player/src"
-OUT="${WM_OUT:-$ROOT_DIR/build/walkmam-media}"
+OUT="${WM_OUT:-$ROOT_DIR/build/ouvila-media}"
 MODO=cross
 
 for arg in "$@"; do
@@ -202,7 +202,7 @@ if [ "$FALTA_H" -gt 0 ]; then
     exit 1
 fi
 
-echo "--> compilando walkmam-media ($MODO) com $CC"
+echo "--> compilando ouvila-media ($MODO) com $CC"
 echo "--> includes: $SYSROOT_INC"
 for f in "${FONTES[@]}"; do
     [ -f "$SRC_DIR/$f" ] || { echo "!!! fonte ausente: $SRC_DIR/$f" >&2; exit 1; }

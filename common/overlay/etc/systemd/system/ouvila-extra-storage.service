@@ -8,7 +8,7 @@ Wants=local-fs.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/walkmam-extra-storage.sh
+ExecStart=/usr/local/bin/ouvila-extra-storage.sh
 # O script e um laco (nao termina por natureza). Se ele morrer, reinicia; o
 # RestartSec evita laco rapido. Nao usa Restart=always porque uma saida normal
 # (impossivel no laco, mas por seguranca) nao deve virar loop.

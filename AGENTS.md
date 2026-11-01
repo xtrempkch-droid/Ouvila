@@ -11,11 +11,12 @@ Idioma do repositório: **português**. Mantenha comentários, commits e docs em
 
 ## 0. ONDE PARAMOS (2026-10-25, com o adendo de 2026-10-30 no fim do arquivo) — leia antes de tudo
 
-Detalhe completo em [`docs/status.md`](status.md) — seção "PONTO DE RETOMADA" no topo.
+Detalhe completo em [`docs/status.md`](docs/status.md) — seção "PONTO DE RETOMADA" no topo.
 Resumo:
 
 | O que | Estado |
 | --- | --- |
+| **Nome do projeto** | **Ouvila** desde 2026-11-01 (nome anterior removido por motivo jurídico) — ver §1.1. **Regrave o cartão**: nomes de serviço/arquivo mudaram e não há atualização in-place |
 | Variante **`kodi`** (multimídia) | **pronta e validada** no X55 e X35H — build #120 (~356 MB) |
 | Variante **`retroarch`** (jogos) | **imagem #119 validada no X55 e no X35H**: tela girada, áudio no ALSA, **todos os botões e os 2 analógicos**, sessão estável (X35H: 81 s) |
 | Variante **`media-player`** (mídia) | **v0.4 publicada (~205 MB)**: app de mídia num binário só. X35H: sobe, desenha e toca. v0.3/v0.4 (menu com submenus, biblioteca por álbum, 10 idiomas, 5 temas, equalizador) **só validadas offline** — falta o teste no aparelho |
@@ -63,6 +64,44 @@ Debian Bookworm + Weston/Wayland + Kodi, em imagem de cartão SD.
 
 Leia primeiro a visão de estado do projeto: [`docs/status.md`](docs/status.md)
 (é o ponto de retomada, com o que testar e o que devolver).
+
+## 1.1 Nome do projeto: **Ouvila** (desde 2026-11-01)
+
+O projeto teve o nome trocado para **Ouvila** por motivo jurídico. A marca anterior não
+aparece em lugar nenhum da árvore — de propósito. **Não a reintroduza**, em nenhuma
+grafia, nem em código, doc, commit ou tag: escreva sempre `Ouvila` / `ouvila` /
+`OUVILA_*`.
+
+O mapeamento completo do que foi renomeado está na mensagem do commit
+`git log --grep="renomeia o projeto"` (histórico não é árvore). Em resumo, hoje é tudo
+`ouvila`:
+
+| O que | Valor atual |
+| --- | --- |
+| Config do aparelho (partição FAT) | `/boot/ouvila.conf` |
+| Binário e ajustes do app de mídia | `/usr/local/bin/ouvila-media`, `/boot/ouvila-media.conf` |
+| Units e scripts | `ouvila-webui`, `ouvila-radio-retry`, `ouvila-usb-watch`, `ouvila-extra-storage` |
+| Painel web | `/usr/local/share/ouvila-webui` |
+| Helper de display | `/usr/local/share/ouvila/display.sh` (`ouvila_*()`) |
+| Add-on do Kodi | `script.ouvila.radio` ("Ouvila Radio") |
+| Variáveis de ambiente | `OUVILA_*` (um prefixo só) |
+| Marca no `APPEND` do extlinux | `ouvila_x55_gamepad=rocknix-v1` |
+
+Regras:
+
+1. Os scripts de build usavam **dois** prefixos de variável diferentes; foram unificados
+   em `OUVILA_*`. Não recrie o segundo.
+2. **Sem alias de compatibilidade:** cartão antigo perde os ajustes do `ouvila.conf` e
+   volta ao padrão `auto` (rotação por modelo), que é o comportamento correto nos três
+   aparelhos. Não crie código que leia nome antigo.
+3. O **prefixo interno `wm_`/`WM_` e o arquivo `wm.h`** do `media-player` foram
+   **mantidos de propósito**: são ~800 identificadores de UI, não são a marca, e não há
+   como compilar o binário aqui (`libdrm`/`ffmpeg`/`freetype`/`alsa` ausentes) para
+   validar a troca. Se for renomear, faça num commit isolado e valide no aparelho.
+4. O repositório no GitHub precisa ser renomeado **na interface** (Settings → Rename);
+   o `origin` local ainda aponta para o nome antigo e passa a depender do redirect.
+5. **Regravar o cartão** depois desta mudança: nomes de serviço e de arquivo mudaram, e
+   não existe caminho de atualização in-place.
 
 ## 2. Mapa do repositório
 
@@ -155,7 +194,7 @@ Se voltar a falhar: o motivo fica em **`/boot/kodi-start.log`** e na **tela (tty
   - **Teste que decide:** com o console serial aberto, `dmesg -w` e plugar um pendrive;
     depois `ls /sys/bus/usb/devices/`. Antes de concluir "sem dados", repetir com o
     **mesmo cabo que funciona na X55**.
-  - A imagem traz `walkmam-usb-watch.service` → `/boot/usb-watch.log` com o retrato do
+  - A imagem traz `ouvila-usb-watch.service` → `/boot/usb-watch.log` com o retrato do
     estado USB a cada mudança (UDC, `usb_role`, dispositivos, `online`, `dmesg`).
   - Continuam disponíveis `extlinux.conf.x35s` (otg, padrão) e
     `extlinux.conf.x35s-peripheral` (teste).
@@ -219,7 +258,7 @@ A variante é escolhida no `workflow_dispatch` (input `variant`); **push na `mai
   mora no menu aberto com **SELECT** (brilho com piso de 10%, apagar a tela, desligar,
   reiniciar). **Power curto** apaga/acende a tela (DPMS off) e **3 s** abrem a
   confirmação de desligar — e para isso o logind tem de ficar fora
-  (`logind.conf.d/10-walkmam-media-power.conf`, `HandlePowerKey=ignore`), senão o
+  (`logind.conf.d/10-ouvila-media-power.conf`, `HandlePowerKey=ignore`), senão o
   systemd desliga o aparelho no toque. **L1/R1** saltam faixa/página e ±30 s no vídeo.
   Na X35H (2026-11-01) o app sobe, desenha e toca; as demais funções vieram desse teste.
 
@@ -233,7 +272,7 @@ Detalhes em [docs/variantes.md](docs/variantes.md). Pontos que custam tempo se e
 2. O build **descobre** o diretório dos cores (`/usr/lib/<triple>/libretro`) em vez de
    chutar, e falha se houver menos de 5 cores ou se o `libretro_directory` não tiver
    sido substituído no `retroarch.cfg`.
-3. A rotação/Weston saiu para `common/overlay/usr/local/share/walkmam/display.sh`
+3. A rotação/Weston saiu para `common/overlay/usr/local/share/ouvila/display.sh`
    (fonte única). **O launcher do Kodi ainda tem a cópia inline** — foi validado em
    hardware assim; ao mexer nele, migre para o helper.
 4. `dump-diagnostico.sh`, `radio-retry.sh`, `usb-watch.sh` e o painel web ainda moram em
@@ -306,7 +345,7 @@ empurrar qualquer commit para a `main`:
   `10.55.0.2/24`), usuário `root`, senha `root`.
   - Se o login por senha for **recusado**, quase sempre é o `ssh_config` do Debian:
     o padrão é `PermitRootLogin prohibit-password`. A imagem instala
-    `/etc/ssh/sshd_config.d/10-walkmam.conf` com `PermitRootLogin yes` e
+    `/etc/ssh/sshd_config.d/10-ouvila.conf` com `PermitRootLogin yes` e
     `PasswordAuthentication yes`.
 - **Logs no cartão** (partição FAT, leitura no PC): `diagnostico.txt`,
   `kodi-start.log`, `usb-gadget.log`, `weston.log`.
@@ -322,7 +361,7 @@ empurrar qualquer commit para a `main`:
 3. **FDT ausente = aparelho sem imagem** (LED aceso). O step de imagem falha de
    propósito se faltar o DTB ativo.
 4. **Rotação vem de `display_transform`** em `devices/<placa>/device.conf`, gravada em
-   `walkmam.conf` na partição FAT e lida por
+   `ouvila.conf` na partição FAT e lida por
    `variants/kodi/overlay/usr/local/bin/start-kodi-wayland.sh`. Não fixe o transform no
    `weston.ini`.
 5. **Aspas dentro de `bash -c '...'` no `build.yml` já quebraram o build (#82/#83).**
@@ -358,7 +397,7 @@ empurrar qualquer commit para a `main`:
 - Fez: corrigiu a regressão de "sem imagem" (o boot ativo usava o DTB da X35S; agora
   usa o DTB da X55, com o DTB da X35S/X35H em `extlinux/extlinux.conf.x35s`); criou
   `display_transform` por `device.conf` (X55 `rotate-90`, X35S/X35H `normal`); o
-  `build.sh`/`create-image.sh` gravam `walkmam.conf`. Submeteu ao `main` e o build
+  `build.sh`/`create-image.sh` gravam `ouvila.conf`. Submeteu ao `main` e o build
   **#87** passou.
 - Fez também: melhorou o diagnóstico de USB/Kodi (role/UDC, `kodi-start.log`,
   `dump-diagnostico` em 2 capturas) e criou uma variante de boot
@@ -366,7 +405,7 @@ empurrar qualquer commit para a `main`:
   `AGENTS.md`. Build **#88** passou.
 - Fez ainda: **corrigiu o SSH** — o Debian 12 bloqueia login do root por senha
   (`PermitRootLogin prohibit-password`), então `root:root` era recusado; a imagem agora
-  instala `/etc/ssh/sshd_config.d/10-walkmam.conf` com `PermitRootLogin yes` +
+  instala `/etc/ssh/sshd_config.d/10-ouvila.conf` com `PermitRootLogin yes` +
   `PasswordAuthentication yes`. Launcher do Kodi com fallback **Weston → GBM** e o
   motivo do erro **na tela**; `kodi.service` com `Restart=on-failure`/`RestartSec=15`
   para a falha não virar loop que apaga a mensagem. Push `63f4bd7` → **build #89**.
@@ -389,7 +428,7 @@ empurrar qualquer commit para a `main`:
   `unavailable`) e BlueZ. Validado ao vivo após copiar os firmwares: `wlan0` (fw
   24.11.0) e `hci0` sobem. A imagem agora baixa os firmwares (tag 20260309, sha256) e
   instala `wpasupplicant iw wireless-tools rfkill bluez busybox`, além do **painel web
-  na porta 8088** (`walkmam-webui.service`) para gerenciar Wi-Fi/BT.
+  na porta 8088** (`ouvila-webui.service`) para gerenciar Wi-Fi/BT.
 - **Drift de fontes externas (2026-10-24):** os runs #90/#91 falharam porque o master da
   ROCKNIX mudou (kernel 7.2, patch 0012 removido, 0016 usando `&gpio_keys_control`).
   Agora U-Boot/ROCKNIX/rkbin estão **fixados por commit** e há guarda para `.rej`.
@@ -410,16 +449,16 @@ empurrar qualquer commit para a `main`:
 
 ### 2026-10-24 — Copilot (add-on de rádio dentro do Kodi + créditos)
 
-- Fez: criou o add-on **`script.walkmam.radio`** ("Walkmam Radio") porque o Kodi 20 no
+- Fez: criou o add-on **`script.ouvila.radio`** ("Ouvila Radio") porque o Kodi 20 no
   Linux não tem UI de rádio (o gerenciador de Wi-Fi só existe nos builds
   Windows/Android). É um script add-on (`xbmc.python` 3.0.0) em
-  `variants/kodi/overlay/usr/share/kodi/addons/script.walkmam.radio/` que chama
+  `variants/kodi/overlay/usr/share/kodi/addons/script.ouvila.radio/` que chama
   `nmcli` (listar/conectar/desconectar Wi-Fi) e `bluetoothctl` (ligar, procurar,
   parear, conectar, ficar visível). O CI instala e roda `py_compile` no `default.py`.
   Também adicionou ao `README.md` a seção **"Créditos e transparência sobre o uso de
   IA"** (DeepSeek como modelo criador dos códigos + Copilot como assistente, o que foi
   verificado em hardware e o que não foi).
-- Validado no #97: o Kodi registra `CAddonMgr::FindAddons: script.walkmam.radio v1.0.0
+- Validado no #97: o Kodi registra `CAddonMgr::FindAddons: script.ouvila.radio v1.0.0
   installed`; e a lógica rodou no aparelho com os binários reais — `wifi_redes()`
   devolveu SSIDs com sinal/segurança, `bt_info()` devolveu o controlador
   `A8:4F:A4:C9:98:4C`, `bt_escanear(8)` achou 2 dispositivos em 8,3 s.
@@ -449,7 +488,7 @@ empurrar qualquer commit para a `main`:
 ### 2026-10-24 — Copilot (imagem #100 validada no CI)
 
 - Fez: **build #100 success** (356 MB), a imagem para usar: junta o Bluetooth corrigido
-  (config UART do 8821CS gerada no build) e o add-on `script.walkmam.radio` com o
+  (config UART do 8821CS gerada no build) e o add-on `script.ouvila.radio` com o
   teclado da senha corrigido. Conferido localmente que o bloco do CI gera o
   `rtl8821cs_config.bin` **byte-idêntico** ao validado no aparelho (sha256
   `6ddeb15f...`) e que a instalação do add-on produz os dois arquivos certos
@@ -468,7 +507,7 @@ empurrar qualquer commit para a `main`:
   com `dr_mode = "peripheral"` num **helper reutilizável** que **verifica o DTB final**
   (não gera variante quebrada em silêncio) e a entrada `extlinux.conf.x35s` **já aponta
   para ela**; `extlinux.conf.x35s-otg` volta ao original.
-- **Rotação (bug real):** o `walkmam.conf` saía sempre com `display_transform=rotate-90`,
+- **Rotação (bug real):** o `ouvila.conf` saía sempre com `display_transform=rotate-90`,
   obrigando a editar à mão para X35S/X35H. Agora o padrão é `auto` e o launcher escolhe
   pelo `/proc/device-tree/model` (`*x55*` → `rotate-90`, resto → `normal`); valor
   explícito continua vencendo. Testado com matriz de casos (auto/vazio/explícito).
@@ -500,7 +539,7 @@ empurrar qualquer commit para a `main`:
   teclado e **dongle USB-Ethernet funcionam**, mas gadget/SSH direto é impossível.
 - Revertido o padrão `peripheral` (seria trocar o padrão por uma hipótese já testada e
   falha) e mantida a variante como teste. Também reverte o `dr_mode` só na X35S/X35H.
-- Criado `walkmam-usb-watch.service` + `usb-watch.sh` (5 min no boot, log por boot em
+- Criado `ouvila-usb-watch.service` + `usb-watch.sh` (5 min no boot, log por boot em
   `/boot/usb-watch.log`, retrato a cada mudança + `dmesg` do instante) para o teste do
   pendrive produzir evidência.
 - Pendente / próximo: o usuário plugar um pendrive e devolver `usb-watch.log`. Isso
@@ -566,7 +605,7 @@ empurrar qualquer commit para a `main`:
      mas o RetroArch dimensiona a **própria superfície** com `video_fullscreen_x/y`;
      com `"0"` ele usa o modo **nativo** do painel e pede superfície maior que o
      fullscreen. O Weston mata o cliente e o RetroArch sai com **status 0** — parecia
-     saída normal do usuário. Correção: `walkmam_rotated_size()` em `display.sh`
+     saída normal do usuário. Correção: `ouvila_rotated_size()` em `display.sh`
      (modo do DRM + transform) passado por `--appendconfig`; medido: 7,5 s → estável.
      Junto: sessão com status 0 e **menos de 10 s** deixou de contar como sucesso.
   2. **Nenhum botão respondia:** `[Autoconf]: retrogame_joypad (18507/4353) not
@@ -622,17 +661,17 @@ empurrar qualquer commit para a `main`:
 - **Não existe item "Desligar"** no RetroArch 1.14 (o menu é `Restart RetroArch` +
   `Quit RetroArch`); criar um exigiria patch no fonte do RetroArch. Solução: o
   **launcher** trata saída normal como desligamento.
-- Fez: `start-retroarch.sh` lê `retroarch_exit` de `/boot/walkmam.conf` (padrão
+- Fez: `start-retroarch.sh` lê `retroarch_exit` de `/boot/ouvila.conf` (padrão
   `poweroff`; `stay` = só sai) e, ao terminar com status 0 e sessão ≥ 10 s, mostra
   "Desligando..." no tty1, faz `sync` e `systemctl poweroff --no-block`. Crash ou sessão
   curta **não** desligam (continua sendo falha, com retry e motivo na tela). Criado
-  `walkmam_read_conf_key` em `display.sh` (`walkmam_read_transform` passou a usá-lo) e a
-  chave foi documentada no `walkmam.conf` gerado pelo CI e pelo `build/create-image.sh`.
+  `ouvila_read_conf_key` em `display.sh` (`ouvila_read_transform` passou a usá-lo) e a
+  chave foi documentada no `ouvila.conf` gerado pelo CI e pelo `build/create-image.sh`.
   `quit_press_twice` continua ligado, para não desligar com um toque acidental.
 - Testado **sem hardware**: launcher rodado com `retroarch`/`systemctl` falsos — 6 casos
   (conf ausente, `stay`, `poweroff`, valor inválido, crash, sessão curta) e o parsing
-  real do `display.sh` com `walkmam.conf` em CRLF (FAT). Falta confirmar no aparelho.
-- **Armadilha encontrada no teste:** `EXIT_ACTION=$(walkmam_read_conf_key ...)` com
+  real do `display.sh` com `ouvila.conf` em CRLF (FAT). Falta confirmar no aparelho.
+- **Armadilha encontrada no teste:** `EXIT_ACTION=$(ouvila_read_conf_key ...)` com
   `set -eu` mata o launcher se o helper retornar != 0 — o padrão do projeto não tinha
   esse cuidado; agora a atribuição tem `|| EXIT_ACTION=`.
 - **CONFIRMADO NO APARELHO (2026-10-28, X35H):** com o launcher novo instalado na
@@ -657,8 +696,8 @@ empurrar qualquer commit para a `main`:
   (3) `BOOT_TARGETS` do U-Boot mainline é `mmc1 mmc0` — **o SD2 nunca era tentado**.
 - Fez: `root=PARTUUID=<do build>` no CI e no `create-image.sh`; `BOOT_TARGETS "mmc1 mmc0
   mmc2 ..."` (define no header do board, antes do `#include` do `rk3568_common.h`, que
-  respeita o `#ifndef`); imagem padrão **3584 MiB** (`WALKMAN_IMAGE_SIZE_MB`); novo
-  `common/overlay/usr/local/bin/walkmam-extra-storage.sh` + unit (monta os slots sem o
+  respeita o `#ifndef`); imagem padrão **3584 MiB** (`OUVILA_IMAGE_SIZE_MB`); novo
+  `common/overlay/usr/local/bin/ouvila-extra-storage.sh` + unit (monta os slots sem o
   sistema em `/storage/sdcard<N>` e liga em `/boot/roms/sdcard<N>`) e
   `tools/install-image-to-emmc.sh` (confere tamanho, zera GPT, grava).
 - **Hotplug sem `broken-cd`:** a X35H roda o **DTB oficial da ROCKNIX**, então mexer no
@@ -812,8 +851,8 @@ empurrar qualquer commit para a `main`:
   no **mesmo** release da linha RK3566 (assets acumulam, `--clobber` por arquivo).
   Removido `build-rk3326-loader.yml` (virou o job acima).
 - **`build/create-image.sh`** ganhou três knobs por env, com os valores históricos
-  como padrão: `WALKMAN_EARLYCON`, `WALKMAN_DTBS_GLOB`,
-  `WALKMAN_PANEL_OVERLAY_NAME/_FILE` (este último escreve `FDTOVERLAYS` no
+  como padrão: `OUVILA_EARLYCON`, `OUVILA_DTBS_GLOB`,
+  `OUVILA_PANEL_OVERLAY_NAME/_FILE` (este último escreve `FDTOVERLAYS` no
   `extlinux.conf`).
 - **`devices/game-console-r35s`**: `image_dtb=rk3326-gameconsole-r36s.dtb`
   (binário oficial copiado para `dts/`, sha256 `b84245e6…`),
@@ -868,10 +907,10 @@ empurrar qualquer commit para a `main`:
   da **raiz** — é o "parser pobre" que o README da ROCKNIX avisa que quebra até
   com espaço sobrando. O `LABEL` com parênteses/espaços era o segundo risco.
 - **Correção (`build/create-image.sh`, retrocompatível):** knobs
-  `WALKMAN_FDT_DIR` (padrão `dtbs`; vazio = raiz) e `WALKMAN_LABEL` (padrão
-  `Walkmam (<device> - <variant>)`). O DTB passou a ser copiado **sempre também
-  para a raiz**. No workflow do RK3326: `WALKMAN_FDT_DIR=` e
-  `WALKMAN_LABEL=walkmam`.
+  `OUVILA_FDT_DIR` (padrão `dtbs`; vazio = raiz) e `OUVILA_LABEL` (padrão
+  `Ouvila (<device> - <variant>)`). O DTB passou a ser copiado **sempre também
+  para a raiz**. No workflow do RK3326: `OUVILA_FDT_DIR=` e
+  `OUVILA_LABEL=ouvila`.
 - **DTBs novos que o usuário mandou:** `J:\boot\rk3326-rg351mp-linux.dtb` é o
   **mesmo** R35S/R36S "fix by lxc" (`elida,kd35t133`, 52x70 mm, 4 lanes,
   `flags 0x0a03`, init de 773 bytes/155 passos) que já tínhamos — só com o nome
@@ -880,7 +919,7 @@ empurrar qualquer commit para a `main`:
   `odroidgo2-joypad`) e não serve.
 - **Pendente / próximo:** rodar `target=imagem` (loader=oficial) e gravar; o
   `extlinux.conf` agora sai com `FDT /rk3326-gameconsole-r36s.dtb` e
-  `LABEL walkmam`, igual ao que a ROCKNIX usa neste aparelho.
+  `LABEL ouvila`, igual ao que a ROCKNIX usa neste aparelho.
 
 ### 2026-10-30 (6) — DeepSeek (revisão com strings do loader de fábrica: `dtb load fail` não é fatal)
 
@@ -899,7 +938,7 @@ empurrar qualquer commit para a `main`:
   boot não ter subido; é ruído de um passo anterior.
 - **Regra que fica:** o extlinux do RK3326 tem que imitar o arquivo da ROCKNIX —
   `FDTDIR /`, DTB na raiz, `LABEL` simples, sem espaço sobrando. Isso já está no
-  `create-image.sh` (knobs `WALKMAN_FDT_DIR`/`WALKMAN_LABEL`).
+  `create-image.sh` (knobs `OUVILA_FDT_DIR`/`OUVILA_LABEL`).
 - **Comparativo (docs §11.7):** ROCKNIX = vendor U-Boot + kernel **7.1.2** + 15
   DTBs + overlay; KNULLI = vendor U-Boot + kernel **4.4 BSP** + DTB fixo
   (`rk3326-rg351mp-linux.dtb`) + `boot.ini`. O nosso é o único **híbrido**
@@ -990,8 +1029,8 @@ empurrar qualquer commit para a `main`:
 - **CI:** a variante entrou no input do `workflow_dispatch`, no gatilho por tag
   `media-player-*`, no Preflight (fontes/overlay presentes) e no bloco de rootfs
   (instala bibliotecas do manifesto, confere `ldconfig` + fonte DejaVu, compila, instala
-  binário/launcher/serviço e roda `walkmam-media --version` **dentro do rootfs com
-  qemu**). O `walkmam.conf` ganhou `media_volume`, `media_audio_out`, `media_roots` e
+  binário/launcher/serviço e roda `ouvila-media --version` **dentro do rootfs com
+  qemu**). O `ouvila.conf` ganhou `media_volume`, `media_audio_out`, `media_roots` e
   `media_exit`; a imagem cria `/boot/media/{music,videos}` com LEIA-ME.
 - **Testado (sem hardware):** `tools/test-media-player.sh` → biblioteca (ID3v2, ID3v1,
   Vorbis, fallback do nome), as 4 abas desenhadas com conteúdo (contagem de cores no
@@ -1117,7 +1156,7 @@ empurrar qualquer commit para a `main`:
   `KEY_POWER` por conta própria** (`HandlePowerKey=poweroff` é o padrão) — ele desligaria
   o aparelho no toque curto **antes** de o app ver a tecla, e o "apagar a tela" nunca
   funcionaria. A imagem instala
-  `/etc/systemd/logind.conf.d/10-walkmam-media-power.conf` com `HandlePowerKey=ignore`
+  `/etc/systemd/logind.conf.d/10-ouvila-media-power.conf` com `HandlePowerKey=ignore`
   (+ long press/suspend/hibernate). O Preflight confere que esse arquivo existe.
 - **Teste que mentia (corrigido):** o `--selftest` deixava `ev.soltou = true` de um caso
   para o outro, então **todos** os casos seguintes eram ignorados (a UI devolve
@@ -1162,9 +1201,9 @@ empurrar qualquer commit para a `main`:
   menu do SELECT virou **raiz + submenus** (Wi-Fi, Bluetooth, Som → Equalizador, Idioma,
   Relógio, Tema); o quinto botão dos controles gira o **modo de reprodução**; a
   Biblioteca agrupa as músicas por álbum (ordenação por inserção sobre `musicas[]`, cada
-  álbum é um trecho contíguo). Estado novo em `/boot/walkmam-media.conf`
+  álbum é um trecho contíguo). Estado novo em `/boot/ouvila-media.conf`
   (`idioma`, `tema`, `modo`, `eq0..eq9`, `eq_preset`, `preamp`, `neural`) — arquivo
-  separado do `walkmam.conf`, que continua sendo editado à mão no cartão.
+  separado do `ouvila.conf`, que continua sendo editado à mão no cartão.
 - **Armadilhas encontradas nesta sessão (algumas custaram tempo de verdade):**
   1. **HarfBuzz não é opcional** para 3 dos 10 idiomas: sem ele o árabe sai com as letras
      soltas e o hindi/bengali com as vogais fora de lugar. O FreeType só rasteriza um
@@ -1229,3 +1268,36 @@ empurrar qualquer commit para a `main`:
   `dsp.c` para `rate == 0` e a linha de álbum mais alta na Biblioteca. Nenhum dos dois
   muda o comportamento normal (o primeiro só age com a saída de áudio desligada; o
   segundo é cosmético).
+
+### 2026-11-01 — Copilot (renomeação do projeto para **Ouvila**)
+
+- **Pedido:** trocar o nome do projeto por motivo jurídico. Feito de forma mecânica e
+  verificada, **sem** alias de compatibilidade e **sem** deixar a marca anterior em
+  lugar nenhum da árvore (ver §1.1; o mapeamento antigo→novo está na mensagem deste
+  commit, não no arquivo).
+- **O que mudou (41 arquivos de conteúdo + 10 caminhos):** config do aparelho,
+  binário e ajustes do app de mídia, 4 units + seus scripts, diretório do painel web,
+  helper de display e as funções `ouvila_*()`, add-on do Kodi (pasta **e** `id` do
+  `addon.xml`), o `retroarch.cfg` em `etc/ouvila/`, o drop-in do `logind` e a marca do
+  `APPEND` no extlinux.
+- **Achado no meio do caminho:** existiam **dois** prefixos de variável convivendo nos
+  scripts de build (66 ocorrências no prefixo antigo dos scripts). Foram unificados em
+  `OUVILA_*`, que é o único que existe hoje.
+- **Mantido de propósito:** o prefixo interno `wm_`/`WM_` e o arquivo `wm.h` do
+  `media-player` (~800 identificadores de UI). Não é a marca, e renomear sem poder
+  compilar aqui (faltam `libdrm`, `ffmpeg`, `freetype`, `alsa`) seria trocar risco por
+  estética. Registrado no §1.1 item 3.
+- **Validado sem compilar kernel:** os 2 workflows parseiam; **todos** os blocos `run`
+  passam em `bash -n`; os 17 scripts em `sh -n`/`bash -n`; os 4 `.py` em `py_compile`;
+  o `addon.xml` parseia; **39 caminhos** citados por workflows/build existem (era o
+  risco real da renomeação de pastas); todas as units têm `ExecStart` batendo com o
+  script instalado e o `systemctl enable` batendo com o nome do arquivo; leitura do
+  `ouvila.conf` exercitada na prática (valor explícito vence, ausente cai no `auto`
+  por modelo). Também corrigi um link markdown quebrado que eu tinha deixado no §0.
+- **Não fiz (precisa de mão humana):** renomear o repositório no GitHub
+  (Settings → Rename para `Ouvila_RK3566`; o `origin` local ainda aponta para o nome
+  antigo e passa a depender do redirect).
+- **Pendente / próximo:** (1) renomear o repo e ajustar `git remote set-url`;
+  (2) gerar imagem nova e gravar — **é preciso regravar o cartão**, porque os nomes de
+  serviço/arquivo mudaram e não há caminho de atualização in-place; (3) opcionalmente
+  renomear `wm_`/`wm.h` num commit isolado, validando com o binário compilado.

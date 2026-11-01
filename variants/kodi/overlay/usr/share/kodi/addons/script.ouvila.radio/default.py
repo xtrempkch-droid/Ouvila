@@ -15,7 +15,7 @@ import time
 import xbmc
 import xbmcgui
 
-TITULO = 'Walkmam Radio'
+TITULO = 'Ouvila Radio'
 
 # O servico do Kodi roda com HOME=/root e o PATH do systemd; usar caminho
 # absoluto evita depender de como o Kodi foi iniciado.
@@ -180,7 +180,7 @@ def menu_wifi_status():
         linhas.append('')
         linhas.append('Verifique com: dmesg | grep rtw88')
         linhas.append('A imagem tem um servico que recarrega o modulo no boot:')
-        linhas.append('  systemctl status walkmam-radio-retry')
+        linhas.append('  systemctl status ouvila-radio-retry')
         mostrar('\n'.join(linhas))
         return
     linhas.append('Radio: %s' % ('ligado' if wifi_ligado() else 'desligado'))

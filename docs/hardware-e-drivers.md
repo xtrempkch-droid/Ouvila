@@ -52,7 +52,7 @@ eMMC/SD → BootROM → idbloader (rkbin: ddr + bl31) → U-Boot (extlinux)
   O DTS também habilita o eMMC (`sdhci`), mas na X55 testada **não há eMMC** — o kernel
   loga `mmc0: Failed to initialize a non-removable card` e segue. Inofensivo.
   (CONFIRMADO: `lsblk` só mostra `mmcblk1`.)
-* `walkmam_x55_gamepad=rocknix-v1` na linha `APPEND` é **apenas um marcador** de
+* `ouvila_x55_gamepad=rocknix-v1` na linha `APPEND` é **apenas um marcador** de
   identificação da imagem. Nenhum driver lê esse parâmetro — não espere mudança de
   comportamento dele.
 
@@ -86,7 +86,7 @@ não uniforme no compositor (não recomendado).
 1. `panel { rotation = <270> }` → diz ao DRM como o painel está montado (sentido
    físico). **Não é** o que gira o Kodi.
 2. `weston.ini` → `transform=rotate-90` na saída `DSI-1` (arquivo gerado a cada boot a
-   partir de `display_transform` em `/boot/walkmam.conf`).
+   partir de `display_transform` em `/boot/ouvila.conf`).
 3. Kodi → herda a saída já transformada do Weston; não tem transformação própria aqui.
 
 Trocar só uma das camadas deixa a tela de ponta a cabeça ou com o toque/botões
@@ -410,7 +410,7 @@ Consequências que custam tempo se ignoradas:
    179:130` com `root=PARTUUID=40d50178-02`.
 2. **O eMMC tem 3776 MiB.** A imagem já foi de 4096 MiB — **não cabia**, e um `dd` maior
    que o disco termina em `No space left on device` deixando instalação truncada. Agora
-   o padrão é **3584 MiB** (`WALKMAN_IMAGE_SIZE_MB` para mudar).
+   o padrão é **3584 MiB** (`OUVILA_IMAGE_SIZE_MB` para mudar).
 3. **O U-Boot mainline só varria `mmc1 mmc0`** (`BOOT_TARGETS` em
    `include/configs/rockchip-common.h`): um sistema no **SD2 nunca iniciava**. O build
    define `BOOT_TARGETS "mmc1 mmc0 mmc2 nvme scsi usb pxe dhcp spi"` no header do board
@@ -418,7 +418,7 @@ Consequências que custam tempo se ignoradas:
 4. **Nenhum dos dois slots tem `cd-gpios`** no DTS: o MMC core marca os dois como
    `removable=0` e **não percebe** cartão inserido depois do boot. `broken-cd` (polling)
    resolveria no nosso DTB, mas a X35H roda o **DTB oficial da ROCKNIX**, então o
-   hotplug é feito no software: `walkmam-extra-storage.service` religa o slot
+   hotplug é feito no software: `ouvila-extra-storage.service` religa o slot
    (`unbind`/`bind` no `dwmmc_rockchip`) — verificado no aparelho, o cartão e as
    partições voltam a ser detectados.
 5. **O eMMC de fábrica tem ROCKNIX em GPT**; a nossa imagem é MBR. Ao instalar no eMMC,
@@ -499,7 +499,7 @@ Sintoma: tela preta com backlight aceso, ou imagem mas controles errados.
 
 ```text
 # /boot/extlinux/extlinux.conf
-LABEL Walkmam
+LABEL Ouvila
     KERNEL /Image
     FDT /dtbs/rk3566-powkiddy-x55.dtb      # X55  (X35S/X35H: -x35s.dtb)
     APPEND ... console=ttyS2,1500000n8 console=tty1 root=/dev/mmcblk1p2 rw
@@ -637,7 +637,7 @@ por senha no Debian 12, é preciso um drop-in, porque o padrão é
 `PermitRootLogin prohibit-password`:
 
 ```ini
-# /etc/ssh/sshd_config.d/10-walkmam.conf
+# /etc/ssh/sshd_config.d/10-ouvila.conf
 PermitRootLogin yes
 PasswordAuthentication yes
 ```
@@ -645,7 +645,7 @@ PasswordAuthentication yes
 ### F11 — rádio no Kodi · *usuário*
 
 O Kodi **20 no Linux não tem UI de rádio** (o gerenciador de Wi-Fi do Kodi só existe nos
-builds Windows/Android). Este projeto resolve com o add-on `script.walkmam.radio` e com
+builds Windows/Android). Este projeto resolve com o add-on `script.ouvila.radio` e com
 um painel web na porta 8088. Se você portar para outro sistema, precisa de um dos dois —
 o Kodi não vai oferecer nada.
 

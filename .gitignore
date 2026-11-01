@@ -16,4 +16,5 @@
 /rocknix-official-x35s.dts.new
 /rk3566-*-sdcard.img
 /rk3566-*-sdcard.img.gz
-/build/walkmam-media
+/build/ouvila-media
+__pycache__/

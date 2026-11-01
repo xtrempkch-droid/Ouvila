@@ -1,5 +1,5 @@
 [Unit]
-Description=Walkmam: retry do Wi-Fi/Bluetooth RTL8821CS apos o boot
+Description=Ouvila: retry do Wi-Fi/Bluetooth RTL8821CS apos o boot
 After=NetworkManager.service bluetooth.service
 Wants=NetworkManager.service bluetooth.service
 

@@ -8,26 +8,26 @@ Hoje o workflow e o overlay do Kodi misturam coisas do X55 e da X35S/X35H.
 
 Feito nesta rodada (ainda sem teste em hardware):
 
-- `start-kodi-wayland.sh` lê `display_transform=<valor>` de `/boot/walkmam.conf`
+- `start-kodi-wayland.sh` lê `display_transform=<valor>` de `/boot/ouvila.conf`
   (partição FAT, editável no PC), valida contra os 8 valores do Weston, gera o
   `weston.ini` em `$XDG_RUNTIME_DIR` e avisa no journal se o valor for inválido.
-- `build/create-image.sh` grava o `walkmam.conf` com o padrão do aparelho: `normal`
+- `build/create-image.sh` grava o `ouvila.conf` com o padrão do aparelho: `normal`
   para X35S/X35H, `rotate-90` para o X55 (validado no aparelho).
 - Removido o `dr_mode = "peripheral"` que o workflow forçava só nos DTBs da X35S (era
   a única diferença de USB para o X55, onde o gadget funciona); a imagem passou a
   oferecer também um DTB alternativo com `peripheral`
   (`extlinux.conf.x35s-peripheral`).
-- `dump-diagnostico` inclui `/var/log/weston.log`, `/boot/walkmam.conf`, o `weston.ini`
+- `dump-diagnostico` inclui `/var/log/weston.log`, `/boot/ouvila.conf`, o `weston.ini`
   efetivo e, para o USB, o `dr_mode` em uso, os UDC e os papéis (`usb_role`).
 
 Falta:
 
 - Fazer o workflow usar o `create-image.sh` (hoje a imagem é montada inline — ela já
-  grava o `walkmam.conf`, mas com `normal` fixo, então o X55 não recebe `rotate-90`
+  grava o `ouvila.conf`, mas com `normal` fixo, então o X55 não recebe `rotate-90`
   automaticamente).
 - Mover o padrão do `case` do `create-image.sh` para `display_transform=` no
   `device.conf` de cada aparelho.
-- No X55, a rotação `rotate-90` foi validada no aparelho (editando o `walkmam.conf`)
+- No X55, a rotação `rotate-90` foi validada no aparelho (editando o `ouvila.conf`)
   deixa a interface correta.
 - O mapa de botões do Kodi vira um arquivo por contagem de botões e eixos.
 

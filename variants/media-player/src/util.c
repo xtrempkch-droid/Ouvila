@@ -156,7 +156,7 @@ void wm_conf_read(WmConfig *cfg, const char *path)
     int n;
 
     memset(cfg, 0, sizeof(*cfg));
-    snprintf(cfg->conf_path, sizeof(cfg->conf_path), "%s", path ? path : "/boot/walkmam.conf");
+    snprintf(cfg->conf_path, sizeof(cfg->conf_path), "%s", path ? path : "/boot/ouvila.conf");
     snprintf(cfg->audio_device, sizeof(cfg->audio_device), "default");
     cfg->initial_volume = 70;
     cfg->brightness = -1;
@@ -397,7 +397,7 @@ size_t wm_utf8_copy(char *dst, size_t size, const char *src, size_t max_bytes)
 
 /* ------------------------------------------------------------- ajustes --- */
 
-/* O app escreve os próprios ajustes aqui. Não usamos o walkmam.conf porque
+/* O app escreve os próprios ajustes aqui. Não usamos o ouvila.conf porque
  * aquele arquivo é editado à mão no cartão (e é FAT: o CRLF voltaria).
  *
  * Formato: as linhas do arquivo ficam apontadas em g_linhas e as chaves
@@ -417,9 +417,9 @@ static bool g_conf_carregado;
 const char *wm_settings_path(void)
 {
     static const char *const CANDIDATOS[] = {
-        "/boot/walkmam-media.conf",
-        "/storage/.config/walkmam-media.conf",
-        "/tmp/walkmam-media.conf",
+        "/boot/ouvila-media.conf",
+        "/storage/.config/ouvila-media.conf",
+        "/tmp/ouvila-media.conf",
         NULL
     };
 
@@ -441,7 +441,7 @@ const char *wm_settings_path(void)
         snprintf(g_conf, sizeof(g_conf), "%s", CANDIDATOS[i]);
         return g_conf;
     }
-    snprintf(g_conf, sizeof(g_conf), "/tmp/walkmam-media.conf");
+    snprintf(g_conf, sizeof(g_conf), "/tmp/ouvila-media.conf");
     return g_conf;
 }
 
@@ -591,7 +591,7 @@ bool wm_settings_save(void)
     }
     /* Cabeçalho só na primeira gravação, para o arquivo se explicar no PC. */
     if (!g_n_linhas && !g_n_over) {
-        fprintf(f, "# ajustes do walkmam-media (escrito pelo app)\n");
+        fprintf(f, "# ajustes do ouvila-media (escrito pelo app)\n");
     }
     for (int i = 0; i < g_n_linhas; i++) {
         bool sobreposta = false;

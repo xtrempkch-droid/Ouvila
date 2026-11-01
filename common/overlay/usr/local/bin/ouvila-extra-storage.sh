@@ -23,21 +23,21 @@
 # NUNCA religa o host que tem o sistema montado: derrubaria o proprio root.
 set -u
 
-INTERVALO=${WALKMAM_STORAGE_INTERVALO:-5}   # segundos entre uma varredura e outra
-COOLDOWN=${WALKMAM_STORAGE_COOLDOWN:-15}    # espera entre rescans do mesmo slot
-LOG=${WALKMAM_STORAGE_LOG:-/boot/extra-storage.log}
+INTERVALO=${OUVILA_STORAGE_INTERVALO:-5}   # segundos entre uma varredura e outra
+COOLDOWN=${OUVILA_STORAGE_COOLDOWN:-15}    # espera entre rescans do mesmo slot
+LOG=${OUVILA_STORAGE_LOG:-/boot/extra-storage.log}
 
 # Slots de cartao (o eMMC fica de fora: e nao removivel e costuma ter o sistema).
-# WALKMAM_STORAGE_SLOTS existe para testar um slot isolado no aparelho.
-SLOTS=${WALKMAM_STORAGE_SLOTS:-"fe2b0000.mmc fe000000.mmc"}
+# OUVILA_STORAGE_SLOTS existe para testar um slot isolado no aparelho.
+SLOTS=${OUVILA_STORAGE_SLOTS:-"fe2b0000.mmc fe000000.mmc"}
 DRIVER=dwmmc_rockchip
 
 # "on" (padrao) religa o slot para detectar cartao inserido com o aparelho
 # ligado; "off" so monta o que ja apareceu no boot.
 HOTPLUG=on
-if [ -r "${WALKMAM_CONF:-/boot/walkmam.conf}" ]; then
+if [ -r "${OUVILA_CONF:-/boot/ouvila.conf}" ]; then
     _v=$(sed -n 's/^[[:space:]]*extra_storage_hotplug[[:space:]]*=[[:space:]]*//p' \
-        "${WALKMAM_CONF:-/boot/walkmam.conf}" | tail -n 1 | tr -d '\r[:space:]')
+        "${OUVILA_CONF:-/boot/ouvila.conf}" | tail -n 1 | tr -d '\r[:space:]')
     [ -n "$_v" ] && HOTPLUG=$_v
 fi
 

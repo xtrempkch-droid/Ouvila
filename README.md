@@ -1,4 +1,4 @@
-# Walkmam RK3566
+# Ouvila RK3566
 
 Sistema Linux para media players RK3566, com foco inicial nos handhelds Powkiddy X55, X35S e X35H.
 
@@ -55,7 +55,7 @@ O projeto tem **três variantes** (o mesmo kernel/DTB, mudando o que entra no ro
 sem compositor, navegador nem player externo). Detalhes, como escolher no build e as
 armadilhas de driver em [docs/variantes.md](docs/variantes.md).
 
-A variante padrão do build é `kodi` (Debian Bookworm + Weston/Wayland). Uma única imagem atende os três aparelhos: o device tree e a rotação mudam por arquivo no cartão (`extlinux/extlinux.conf.*` e `walkmam.conf`), sem recompilar. O teste no Powkiddy X55 revelou tela preta com erros no caminho DSI/VOP; o workflow desabilita HDMI como workaround experimental, conforme `docs/build.md`. Valores de pinagem, GPIO e display não são inferidos; consulte `docs/porting.md` antes de adicionar hardware.
+A variante padrão do build é `kodi` (Debian Bookworm + Weston/Wayland). Uma única imagem atende os três aparelhos: o device tree e a rotação mudam por arquivo no cartão (`extlinux/extlinux.conf.*` e `ouvila.conf`), sem recompilar. O teste no Powkiddy X55 revelou tela preta com erros no caminho DSI/VOP; o workflow desabilita HDMI como workaround experimental, conforme `docs/build.md`. Valores de pinagem, GPIO e display não são inferidos; consulte `docs/porting.md` antes de adicionar hardware.
 
 `variants/own/` permanece como scaffold planejado: não contém pacotes nem overlay instalável e o empacotador recusa essa variante até que seja implementada.
 
@@ -67,11 +67,11 @@ Depois de preparar os artefatos de U-Boot, kernel e rootfs, execute:
 build/build.sh powkiddy-x55 kodi
 ```
 
-Por padrão, o script procura `uboot/`, `kernel/` e `rootfs/` na raiz do repositório e grava a imagem compactada em `output/`. Os caminhos podem ser definidos por `WALKMAN_UBOOT_DIR`, `WALKMAN_KERNEL_DIR`, `WALKMAN_ROOTFS_DIR` e `WALKMAN_OUTPUT_DIR`; caminhos relativos também são resolvidos a partir da raiz do repositório. `WALKMAN_DTB_SOURCE` pode apontar para um DTB de referência já obtido; sem isso, usa o DTB compilado no diretório do kernel. A rotação da interface vem de `display_transform` no `device.conf` (X55 `rotate-90`, X35S/X35H `normal`) e é gravada em `walkmam.conf` na partição de boot. Wi-Fi/Bluetooth são gerenciados por um **add-on dentro do Kodi** (`Walkmam Radio`, em Add-ons → Add-ons de programas) e pelo painel web em `http://10.55.0.1:8088` — o Kodi 20 no Linux não traz UI de rádio. O script não baixa fontes nem monta o rootfs: no momento, o workflow do GitHub Actions é o fluxo completo de build.
+Por padrão, o script procura `uboot/`, `kernel/` e `rootfs/` na raiz do repositório e grava a imagem compactada em `output/`. Os caminhos podem ser definidos por `OUVILA_UBOOT_DIR`, `OUVILA_KERNEL_DIR`, `OUVILA_ROOTFS_DIR` e `OUVILA_OUTPUT_DIR`; caminhos relativos também são resolvidos a partir da raiz do repositório. `OUVILA_DTB_SOURCE` pode apontar para um DTB de referência já obtido; sem isso, usa o DTB compilado no diretório do kernel. A rotação da interface vem de `display_transform` no `device.conf` (X55 `rotate-90`, X35S/X35H `normal`) e é gravada em `ouvila.conf` na partição de boot. Wi-Fi/Bluetooth são gerenciados por um **add-on dentro do Kodi** (`Ouvila Radio`, em Add-ons → Add-ons de programas) e pelo painel web em `http://10.55.0.1:8088` — o Kodi 20 no Linux não traz UI de rádio. O script não baixa fontes nem monta o rootfs: no momento, o workflow do GitHub Actions é o fluxo completo de build.
 
 Para executar o build completo, use **Actions → Build Mainline RK3566 (Powkiddy X55) OS → Run workflow**. O workflow publica a imagem em **Releases**: tags `v*`/`retroarch-*` geram um release da versão e cada push na `main` atualiza o release rolante **`latest`** (pre-release). Baixe o `.img.gz` e o `.sha256` de lá — o artifact do Actions continua existindo, mas expira. Detalhes e como gravar em [docs/build.md](docs/build.md#publicação-no-github-releases).
 
-Uma única imagem atende os três aparelhos (X55, X35S e X35H — X35S e X35H compartilham o mesmo DTB): o boot ativo sai com o **DTB da X55**; para X35S/X35H, copie `extlinux/extlinux.conf.x35s` por cima de `extlinux.conf` e ajuste `display_transform=normal` em `walkmam.conf`. O artifact mantém o nome histórico `rk3566-x55-mainline-sdcard-image` por compatibilidade, e a imagem não representa validação em hardware.
+Uma única imagem atende os três aparelhos (X55, X35S e X35H — X35S e X35H compartilham o mesmo DTB): o boot ativo sai com o **DTB da X55**; para X35S/X35H, copie `extlinux/extlinux.conf.x35s` por cima de `extlinux.conf` e ajuste `display_transform=normal` em `ouvila.conf`. O artifact mantém o nome histórico `rk3566-x55-mainline-sdcard-image` por compatibilidade, e a imagem não representa validação em hardware.
 
 ## Créditos e transparência sobre o uso de IA
 
@@ -82,7 +82,7 @@ que foi verificado em hardware e o que ainda é hipótese.
 - **Modelo principal:** **DeepSeek** — responsável pela criação dos códigos do projeto:
   o workflow de build (`.github/workflows/build.yml`), os scripts de build e imagem
   (`build/`), os overlays de rootfs e serviços systemd (`variants/kodi/overlay/`), o
-  painel web (`walkmam-webui`), o add-on `script.walkmam.radio`, os scripts de
+  painel web (`ouvila-webui`), o add-on `script.ouvila.radio`, os scripts de
   diagnóstico e a documentação em `docs/` e `AGENTS.md`.
 - **Assistente de codificação:** GitHub Copilot (agente de código no VS Code), usado
   para operar o mesmo trabalho — ler logs do aparelho, propor correções e editar os

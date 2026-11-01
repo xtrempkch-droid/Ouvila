@@ -40,7 +40,7 @@ define os 17 botões e 4 eixos na ordem observada no aparelho; o workflow o
 instala no rootfs após instalar os pacotes do Kodi. A disposição física segue o
 Nintendo Switch Pro Controller: A à direita, B abaixo, X acima e Y à esquerda.
 
-As imagens X55 incluem o marcador `walkmam_x55_gamepad=rocknix-v1` na linha de
+As imagens X55 incluem o marcador `ouvila_x55_gamepad=rocknix-v1` na linha de
 boot. O diagnóstico registra `/proc/cmdline` e os nós ativos do device tree:
 isso permite distinguir uma falha de probe do driver de uma inicialização
 acidental pela imagem/DTB anterior.
@@ -50,7 +50,7 @@ GBM direto escolhe o modo DSI nativo 720x1280 sem transformar a superfície. Par
 girar somente a interface Kodi, a sessão inicia Weston no backend DRM, com shell
 kiosk, e executa Kodi como cliente Wayland. A rotação da saída `DSI-1` não fica
 fixa no `weston.ini`: `start-kodi-wayland.sh` lê `display_transform=<valor>` de
-`/boot/walkmam.conf` (partição FAT, editável no PC), valida contra os oito
+`/boot/ouvila.conf` (partição FAT, editável no PC), valida contra os oito
 valores aceitos pelo Weston (`normal`, `rotate-90`, `rotate-180`, `rotate-270` e
 as variantes `flipped-*`) e gera o `weston.ini` efetivo em `$XDG_RUNTIME_DIR`;
 valor ausente ou inválido cai em `normal`, com aviso no journal. O valor
@@ -145,7 +145,7 @@ no `extlinux.conf` (não há mais `/dev/mmcblk1p2` fixo), e o U-Boot varre
 | SD2 (`mmc@fe000000`) | `mmcblk2` | o cartão | só inicia se os outros não tiverem sistema |
 
 O padrão de tamanho da imagem é **3584 MiB** justamente para caber no eMMC.
-Para cartões maiores, `WALKMAN_IMAGE_SIZE_MB=8192 build/build.sh ...`.
+Para cartões maiores, `OUVILA_IMAGE_SIZE_MB=8192 build/build.sh ...`.
 
 **Gravar no eMMC a partir do aparelho** (com o sistema rodando do SD):
 
@@ -179,6 +179,6 @@ build/build.sh powkiddy-x55 retroarch
 `kodi` é a variante de multimídia e `retroarch` a de jogos; o que muda entre elas
 (pacotes, serviço do tty1, artefato) está em [variantes.md](variantes.md).
 
-O script espera por `uboot/idbloader.img`, `uboot/u-boot.itb`, `kernel/arch/arm64/boot/Image`, o DTB indicado em `devices/<device>/device.conf` e uma árvore `rootfs/` que contenha o sistema da variante. `variant.conf` declara `status` e o caminho relativo do manifesto de pacotes; variantes planejadas sem implementação não podem ser empacotadas. É possível substituir os diretórios com `WALKMAN_UBOOT_DIR`, `WALKMAN_KERNEL_DIR`, `WALKMAN_ROOTFS_DIR`, `WALKMAN_OUTPUT_DIR` e o DTB com `WALKMAN_DTB_SOURCE`. Caminhos relativos são resolvidos a partir da raiz do repositório. A criação de partições exige `sudo` e as ferramentas `dd`, `parted`, `losetup`, `mkfs.vfat`, `mkfs.ext4` e `gzip`.
+O script espera por `uboot/idbloader.img`, `uboot/u-boot.itb`, `kernel/arch/arm64/boot/Image`, o DTB indicado em `devices/<device>/device.conf` e uma árvore `rootfs/` que contenha o sistema da variante. `variant.conf` declara `status` e o caminho relativo do manifesto de pacotes; variantes planejadas sem implementação não podem ser empacotadas. É possível substituir os diretórios com `OUVILA_UBOOT_DIR`, `OUVILA_KERNEL_DIR`, `OUVILA_ROOTFS_DIR`, `OUVILA_OUTPUT_DIR` e o DTB com `OUVILA_DTB_SOURCE`. Caminhos relativos são resolvidos a partir da raiz do repositório. A criação de partições exige `sudo` e as ferramentas `dd`, `parted`, `losetup`, `mkfs.vfat`, `mkfs.ext4` e `gzip`.
 
-As imagens não são sobrescritas: escolha um nome novo com `WALKMAN_IMAGE_NAME` ou remova manualmente um artefato anterior antes de repetir o comando.
+As imagens não são sobrescritas: escolha um nome novo com `OUVILA_IMAGE_NAME` ou remova manualmente um artefato anterior antes de repetir o comando.

@@ -19,24 +19,24 @@ DTB_NAME=$8
 DISPLAY_TRANSFORM=${9:-}
 # 3584 MiB (3,5 GiB): o eMMC destas placas tem 3776 MiB e uma imagem maior
 # nao cabe nele (o dd morreria no meio e deixaria o eMMC corrompido).
-# A raiz usada e ~1,3 GB. Para cartoes maiores: WALKMAN_IMAGE_SIZE_MB=8192.
-IMAGE_SIZE_MB=${WALKMAN_IMAGE_SIZE_MB:-3584}
+# A raiz usada e ~1,3 GB. Para cartoes maiores: OUVILA_IMAGE_SIZE_MB=8192.
+IMAGE_SIZE_MB=${OUVILA_IMAGE_SIZE_MB:-3584}
 # Knobs por SoC/placa (default = RK3566, o comportamento historico). O RK3326
 # (Game Console R35S/R36S) usa outro endereco de UART2 e outro padrao de DTB,
 # e pode precisar de um overlay de painel (FDTOVERLAYS).
-EARLYCON=${WALKMAN_EARLYCON:-0xfe660000}
-DTBS_GLOB=${WALKMAN_DTBS_GLOB:-rk3566-powkiddy-*.dtb}
-PANEL_OVERLAY_NAME=${WALKMAN_PANEL_OVERLAY_NAME:-}
-PANEL_OVERLAY_FILE=${WALKMAN_PANEL_OVERLAY_FILE:-}
+EARLYCON=${OUVILA_EARLYCON:-0xfe660000}
+DTBS_GLOB=${OUVILA_DTBS_GLOB:-rk3566-powkiddy-*.dtb}
+PANEL_OVERLAY_NAME=${OUVILA_PANEL_OVERLAY_NAME:-}
+PANEL_OVERLAY_FILE=${OUVILA_PANEL_OVERLAY_FILE:-}
 # Onde o DTB mora na particao de boot. Padrao 'dtbs' (subpasta, como no RK3566).
 # O U-Boot de fabricante do RK3326 (2017.09) so carrega o FDT da RAIZ: para
-# aquela placa use WALKMAN_FDT_DIR="" . O DTB tambem e copiado para a raiz em
+# aquela placa use OUVILA_FDT_DIR="" . O DTB tambem e copiado para a raiz em
 # qualquer caso (custa 68 KB e salva o boot).
-FDT_DIR=${WALKMAN_FDT_DIR-dtbs}
+FDT_DIR=${OUVILA_FDT_DIR-dtbs}
 # Rotulo do extlinux. O parser do U-Boot de fabricante e fragil (o proprio
 # README deles avisa que espaco depois do caminho do dtb quebra o boot), entao
-# para o RK3326 use um rotulo simples (WALKMAN_LABEL=walkmam).
-LABEL_NAME=${WALKMAN_LABEL-"Walkmam ($DEVICE - $VARIANT)"}
+# para o RK3326 use um rotulo simples (OUVILA_LABEL=ouvila).
+LABEL_NAME=${OUVILA_LABEL-"Ouvila ($DEVICE - $VARIANT)"}
 BOOT_MOUNT=
 ROOT_MOUNT=
 LOOP_DEV=
@@ -100,7 +100,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-MOUNT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/walkmam-image.XXXXXX")
+MOUNT_DIR=$(mktemp -d "${TMPDIR:-/tmp}/ouvila-image.XXXXXX")
 BOOT_MOUNT="$MOUNT_DIR/boot"
 ROOT_MOUNT="$MOUNT_DIR/rootfs"
 mkdir "$BOOT_MOUNT" "$ROOT_MOUNT"
@@ -223,7 +223,7 @@ if [[ -n $PANEL_OVERLAY_NAME ]]; then
 fi
 
 # Rotação da interface Kodi/Weston na saída DSI-1. O valor fica em
-# walkmam.conf, na partição FAT (BOOT): dá para editar no PC e testar outro
+# ouvila.conf, na partição FAT (BOOT): dá para editar no PC e testar outro
 # valor sem recompilar. Valores válidos do Weston: normal, rotate-90,
 # rotate-180, rotate-270, flipped, flipped-rotate-90, flipped-rotate-180,
 # flipped-rotate-270 (não existe "270" sozinho).
@@ -245,8 +245,8 @@ if [[ -z $DISPLAY_TRANSFORM ]]; then
             ;;
     esac
 fi
-cat > "$BOOT_MOUNT/walkmam.conf" << CONF
-# Configuração editável do Walkmam. Lida no boot por start-kodi-wayland.sh.
+cat > "$BOOT_MOUNT/ouvila.conf" << CONF
+# Configuração editável do Ouvila. Lida no boot por start-kodi-wayland.sh.
 # display_transform: auto | normal | rotate-90 | rotate-180 | rotate-270 |
 #                    flipped | flipped-rotate-90 | flipped-rotate-180 |
 #                    flipped-rotate-270
@@ -313,13 +313,13 @@ if [[ -f $BOOT_MOUNT/dtbs/rk3566-powkiddy-x55.dtb ]]; then
 LABEL Mainline (Powkiddy X55)
     KERNEL /Image
     FDT /dtbs/rk3566-powkiddy-x55.dtb
-    APPEND quiet rootwait earlycon=uart8250,mmio32,$EARLYCON console=ttyS2,1500000n8 console=tty1 root=PARTUUID=$ROOT_UUID rw walkmam_x55_gamepad=rocknix-v1
+    APPEND quiet rootwait earlycon=uart8250,mmio32,$EARLYCON console=ttyS2,1500000n8 console=tty1 root=PARTUUID=$ROOT_UUID rw ouvila_x55_gamepad=rocknix-v1
 BOOTCFG
 fi
 
 BOOT_MARKER=
 if [[ $DEVICE == powkiddy-x55 ]]; then
-    BOOT_MARKER=" walkmam_x55_gamepad=rocknix-v1"
+    BOOT_MARKER=" ouvila_x55_gamepad=rocknix-v1"
 fi
 
 cat > "$BOOT_MOUNT/extlinux/extlinux.conf" << BOOTCFG

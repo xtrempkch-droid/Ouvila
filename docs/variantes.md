@@ -6,11 +6,11 @@ diferença é o que entra no rootfs e qual serviço toma o `tty1` no boot.
 | | `kodi` | `retroarch` | `media-player` |
 | --- | --- | --- | --- |
 | Para quê | vídeo, música, streaming | jogos (libretro) | música e vídeo com UI própria |
-| App principal | Kodi 20 | RetroArch 1.14 | **`walkmam-media`** (binário único, C) |
+| App principal | Kodi 20 | RetroArch 1.14 | **`ouvila-media`** (binário único, C) |
 | Camadas usadas | Weston + Kodi | Weston + RetroArch | **nenhuma** — DRM/KMS + FFmpeg + ALSA |
 | Serviço no tty1 | `kodi.service` | `retroarch.service` | `media-player.service` |
 | Artefato | `rk3566-x55-mainline-sdcard-image` | `rk3566-x55-retroarch-sdcard-image` | `rk3566-x55-media-player-sdcard-image` |
-| Add-on de rádio no app | `script.walkmam.radio` | — (painel web) | Wi-Fi/BT no **menu** (não há aba de rádio: estes aparelhos não têm AM/FM) |
+| Add-on de rádio no app | `script.ouvila.radio` | — (painel web) | Wi-Fi/BT no **menu** (não há aba de rádio: estes aparelhos não têm AM/FM) |
 | Cores | — | NES, SNES, GB/GBC, GBA, PC Engine, PS1 | — |
 | Status | validado no X55 e X35H | build #116 verde; hardware parcial | **X35H: app sobe, desenha e toca. v0.3: menu com submenus, biblioteca por álbum, 10 idiomas, 5 temas, equalizador** |
 
@@ -50,19 +50,19 @@ O passo *Build Minimal RootFS* instala a base, depois entra num bloco por varian
 
 * **`kodi`**: `kodi`, `kodi-bin`, `kodi-peripheral-joystick`, Weston, mesa/EGL,
   `alsa-utils`; mapa de controle do gamepad ROCKNIX; `start-kodi-wayland.sh`;
-  `kodi.service`; `weston.ini`; add-on `script.walkmam.radio` (com checagem de sintaxe
+  `kodi.service`; `weston.ini`; add-on `script.ouvila.radio` (com checagem de sintaxe
   Python no build).
 * **`retroarch`**: pacotes lidos de `variants/retroarch/packages/retroarch.list`;
   descoberta do diretório real dos cores (o Debian usa `/usr/lib/<triple>/libretro`) e
   do binário `retroarch`; geração do `retroarch.cfg` a partir do modelo em
-  `variants/retroarch/overlay/etc/walkmam/retroarch.cfg` com o caminho real
+  `variants/retroarch/overlay/etc/ouvila/retroarch.cfg` com o caminho real
   substituído; criação de `/storage/{roms,saves,states,screenshots,bios}`;
   `start-retroarch.sh` + `retroarch.service`.
 * **`media-player`**: pacotes lidos de `variants/media-player/packages/media-player.list`
   (só bibliotecas: FFmpeg 5.1, libdrm, ALSA, FreeType, fontes); os cabeçalhos arm64 do
   **bookworm** são baixados e extraídos num sysroot temporário e o app é compilado com
   `build/media-player.sh` (cross `aarch64-linux-gnu-gcc`, conferindo que o binário é
-  `ARM aarch64`); instala `usr/local/bin/walkmam-media` e `media-player.service`, cria
+  `ARM aarch64`); instala `usr/local/bin/ouvila-media` e `media-player.service`, cria
   `/storage/media/{music,videos}` e **executa o binário com `--version`** dentro do
   rootfs (via qemu) para pegar biblioteca faltando antes de gravar a imagem.
 
@@ -77,7 +77,7 @@ As outras duas variantes empilham camadas (Weston → app). A `media-player` exi
 o caminho oposto: **um único processo em C** que é a camada inteira.
 
 ```text
-walkmam-media (um binário)
+ouvila-media (um binário)
 ├── DRM/KMS ....... desenha o framebuffer e faz page flip (sem compositor)
 ├── libav* ........ demux + decode de áudio/vídeo (o mesmo FFmpeg do Debian)
 ├── ALSA .......... escreve S16 no codec rk817 (sem servidor de áudio)
@@ -124,8 +124,8 @@ nível (no equalizador, o B volta para o Som).
 | **Desligar / Reiniciar** | diálogo de confirmação; o foco começa em **Cancelar** |
 | **Fechar menu** | ou B |
 
-Tudo o que o menu muda é gravado em **`/boot/walkmam-media.conf`** (o próprio app
-escreve; o `walkmam.conf` continua sendo editado à mão no cartão):
+Tudo o que o menu muda é gravado em **`/boot/ouvila-media.conf`** (o próprio app
+escreve; o `ouvila.conf` continua sendo editado à mão no cartão):
 `idioma`, `tema`, `modo` (modo de reprodução), `eq0`..`eq9`, `eq_preset`, `preamp`,
 `neural`.
 
@@ -211,7 +211,7 @@ O power (`rk805 pwrkey`, `/dev/input/event0`) é o liga/desliga da interface:
 | sair do app com a tela apagada | o painel é religado antes de encerrar |
 
 Para isso o logind **não** pode tratar a tecla: o drop-in
-`/etc/systemd/logind.conf.d/10-walkmam-media-power.conf` põe
+`/etc/systemd/logind.conf.d/10-ouvila-media-power.conf` põe
 `HandlePowerKey=ignore` (o padrão do systemd desligaria o aparelho no toque, antes do
 app ver a tecla).
 
@@ -234,13 +234,13 @@ Os códigos são os do `rocknix-joypad` confirmados em
 /storage/sdcard2/media   cartão de dados no slot 2
 ```
 
-A ordem vem de `media_roots` em `/boot/walkmam.conf` (separado por `:`). A varredura é
+A ordem vem de `media_roots` em `/boot/ouvila.conf` (separado por `:`). A varredura é
 recursiva (até 4 níveis) e roda em segundo plano — a UI nunca espera o disco.
 
 **Tags:** ID3v2 (`TIT2`/`TPE1`/`TALB`), ID3v1 e o bloco Vorbis comment do FLAC são
 lidos direto do arquivo. Sem tag, `Artista - Título.ext` vira artista/título.
 
-### Configuração (`/boot/walkmam.conf`)
+### Configuração (`/boot/ouvila.conf`)
 
 | Chave | Para quê |
 | --- | --- |
@@ -254,8 +254,8 @@ O brilho é ajustado no **menu (SELECT) → Brilho** com ◀ ▶, gravando em
 `/sys/class/backlight/*/brightness` e respeitando o piso de 10%.
 
 Esses cinco são **de boot** e continuam sendo editados à mão no cartão. O que o
-**menu** muda vai para outro arquivo, `/boot/walkmam-media.conf`, que o próprio app
-escreve (o `walkmam.conf` nunca é reescrito pelo app):
+**menu** muda vai para outro arquivo, `/boot/ouvila-media.conf`, que o próprio app
+escreve (o `ouvila.conf` nunca é reescrito pelo app):
 
 | Chave | Valores |
 | --- | --- |
@@ -312,12 +312,12 @@ faltam em vez de morrer num `fatal error` no meio de um arquivo.
 O binário tem modos que existem só para isso:
 
 ```sh
-walkmam-media --screenshot tela.ppm --tab videos      # desenha uma aba e grava
-walkmam-media --screenshot menu.ppm --menu            # com o menu de configurações aberto
-walkmam-media --screenshot z.ppm --idioma ar --tema vidro   # idioma e tema iniciais
-walkmam-media --selftest                              # exercita a navegação
-walkmam-media --scan                                  # lista a biblioteca
-walkmam-media --play filme.mkv --frame-out q.ppm      # decodifica e grava um quadro
+ouvila-media --screenshot tela.ppm --tab videos      # desenha uma aba e grava
+ouvila-media --screenshot menu.ppm --menu            # com o menu de configurações aberto
+ouvila-media --screenshot z.ppm --idioma ar --tema vidro   # idioma e tema iniciais
+ouvila-media --selftest                              # exercita a navegação
+ouvila-media --scan                                  # lista a biblioteca
+ouvila-media --play filme.mkv --frame-out q.ppm      # decodifica e grava um quadro
 ```
 
 O `--selftest` é o que pega regressão de navegação: ele manda teclas sintéticas
@@ -401,7 +401,7 @@ lugar a olhar).
 **Cartões de dados (1 eMMC + 2 slots SD).** O aparelho tem três mídias e o sistema pode
 estar em qualquer uma delas (ver o mapa em
 [hardware-e-drivers.md](hardware-e-drivers.md#52-os-três-armazenamentos-emmc--2-slots-sd--medido-em-2026-10-28)).
-`walkmam-extra-storage.service` monta automaticamente as que **não** têm o sistema:
+`ouvila-extra-storage.service` monta automaticamente as que **não** têm o sistema:
 
 | Situação | Resultado |
 | --- | --- |
@@ -427,7 +427,7 @@ com `scp` para `/storage/roms`. Saves e savestates ficam no ext4 (`/storage/...`
 FAT — assim não se perdem ao copiar ROMs.
 
 Para desligar a detecção de cartão inserido depois do boot (economizar energia),
-`extra_storage_hotplug=off` em `/boot/walkmam.conf`.
+`extra_storage_hotplug=off` em `/boot/ouvila.conf`.
 
 ## Cores incluídos
 
@@ -498,7 +498,7 @@ internet e a tela ficar preta, este quadro é o primeiro lugar a olhar.
 
 Mesmo desenho das duas variantes, para o comportamento ser previsível:
 
-1. lê `display_transform` de `/boot/walkmam.conf` (`auto` escolhe pelo modelo);
+1. lê `display_transform` de `/boot/ouvila.conf` (`auto` escolhe pelo modelo);
 2. sobe o **Weston** (backend DRM, `kiosk-shell`) com `transform` na saída `DSI-1` —
    é essa camada que gira a imagem;
 3. roda o app em Wayland — no RetroArch já com o **tamanho da saída girada** em
@@ -509,7 +509,7 @@ Mesmo desenho das duas variantes, para o comportamento ser previsível:
    `/boot/{kodi,retroarch}-start.log`.
 
 A lógica de rotação e o start do Weston ficam em
-`common/overlay/usr/local/share/walkmam/display.sh` — **fonte única** dessa parte. O
+`common/overlay/usr/local/share/ouvila/display.sh` — **fonte única** dessa parte. O
 launcher do Kodi ainda tem a cópia inline dele (foi validado em hardware assim, e não
 mexemos nele sem necessidade); ao tocar nele, migre para o helper.
 
@@ -537,7 +537,7 @@ O `sync` antes de desligar existe porque a partição FAT (ROMs) e o ext4 (saves
 ter escrita pendente — e o RetroArch grava o `retroarch.cfg` no exit
 (`config_save_on_exit = "true"`).
 
-Ligado/desligado por `retroarch_exit` em `/boot/walkmam.conf` (partição FAT, editável no
+Ligado/desligado por `retroarch_exit` em `/boot/ouvila.conf` (partição FAT, editável no
 PC, sem regravar o cartão):
 
 ```ini
@@ -566,15 +566,15 @@ experiências, grave duas imagens em dois cartões (ou use dois cartões por apa
 
 | Sintoma no log | Causa | Correção |
 | --- | --- | --- |
-| `xdg_surface geometry (720 x 1280) is larger than the configured fullscreen state (1280 x 720)`, e o RetroArch "termina com status 0" | a saída foi girada pelo Weston, mas o app pediu a superfície no modo **nativo** do painel | o launcher passa `video_fullscreen_x/y` com o tamanho **já girado** (`walkmam_rotated_size`); nunca deixe em `"0"` |
+| `xdg_surface geometry (720 x 1280) is larger than the configured fullscreen state (1280 x 720)`, e o RetroArch "termina com status 0" | a saída foi girada pelo Weston, mas o app pediu a superfície no modo **nativo** do painel | o launcher passa `video_fullscreen_x/y` com o tamanho **já girado** (`ouvila_rotated_size`); nunca deixe em `"0"` |
 | `[Autoconf]: retrogame_joypad (…) not configured` | o pacote Debian do RetroArch **não traz** perfil de joypad | perfil em `/root/.config/retroarch/autoconfig/udev/Rocknix_Gamepad.cfg` (instalado pelo build) |
 | `RetroArch (wayland) terminou com status 0 apos 3s` seguido de "tentando video_driver=drm" | morte precoce, não saída do usuário | é o comportamento novo e desejado: abaixo de 10 s não conta como sucesso |
 | "Quit RetroArch" fecha o app e **o aparelho continua ligado** (tela sem interface, só serial responde) | o menu do RetroArch não tem "Desligar"; o `tty1` é do app e o `getty` está mascarado | o launcher desliga na saída normal; log grava `Saida normal do usuario (...) : desligando o aparelho` |
 
 Para inspecionar o RetroArch **sem tomar a tela** (útil por SSH, com o serviço
 rodando), use os drivers nulos — é assim que o autoconfig foi diagnosticado. Nesse tipo
-de depuração, use `retroarch_exit=stay` em `/boot/walkmam.conf` (ou
-`WALKMAM_CONF=<arquivo com stay>`) para o aparelho **não** desligar quando o teste
+de depuração, use `retroarch_exit=stay` em `/boot/ouvila.conf` (ou
+`OUVILA_CONF=<arquivo com stay>`) para o aparelho **não** desligar quando o teste
 terminar:
 
 ```sh

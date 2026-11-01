@@ -1,5 +1,5 @@
 [Unit]
-Description=Walkmam: registra o que o kernel ve ao plugar o cabo USB
+Description=Ouvila: registra o que o kernel ve ao plugar o cabo USB
 After=usb-gadget.service multi-user.target
 # Nao depende do usb-gadget ter dado certo: o objetivo e justamente diagnosticar
 # quando ele falha.

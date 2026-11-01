@@ -7,7 +7,7 @@
  *
  * Rotação: a X55 tem painel 720x1280 montado deitado (rotate-90); a X35S/X35H
  * tem 640x480 e fica em normal. O valor vem de display_transform em
- * /boot/walkmam.conf ("auto" decide pelo /proc/device-tree/model).
+ * /boot/ouvila.conf ("auto" decide pelo /proc/device-tree/model).
  *
  * O canvas tem o tamanho JÁ GIRADO (1280x720 na X55). Este arquivo é o único
  * lugar que sabe que o framebuffer é 720x1280.

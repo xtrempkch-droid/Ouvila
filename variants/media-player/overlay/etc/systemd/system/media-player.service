@@ -1,5 +1,5 @@
 [Unit]
-Description=Walkmam Media Player (app unico: DRM/KMS + FFmpeg + ALSA) no tty1
+Description=Ouvila Media Player (app unico: DRM/KMS + FFmpeg + ALSA) no tty1
 # O app abre o DRM e vira dono do tty1: o getty do tty1 precisa estar fora
 # (a imagem o mascara) e a sessao de usuario encerrada.
 After=systemd-user-sessions.service systemd-udev-settle.service sound.target
@@ -11,8 +11,8 @@ StartLimitBurst=3
 [Service]
 User=root
 Environment=HOME=/root
-Environment=XDG_RUNTIME_DIR=/run/walkmam-media
-RuntimeDirectory=walkmam-media
+Environment=XDG_RUNTIME_DIR=/run/ouvila-media
+RuntimeDirectory=ouvila-media
 RuntimeDirectoryMode=0700
 TTYPath=/dev/tty1
 StandardInput=tty

@@ -78,7 +78,7 @@ hipótese como fato ao portar outra placa.
   (IP estático; o gadget **não** faz DHCP) e o aparelho responde em **10.55.0.1**
   (ICMP ok, porta 22 aberta). A ancoragem funciona; o que faltava era o SSH:
   o Debian 12 usa `PermitRootLogin prohibit-password`, então `root:root` era recusado.
-  Corrigido no #89 com `/etc/ssh/sshd_config.d/10-walkmam.conf` — **validado**: login
+  Corrigido no #89 com `/etc/ssh/sshd_config.d/10-ouvila.conf` — **validado**: login
   `ssh root@10.55.0.1` com senha `root` funciona.
 - **Anterior (rodada com o DTB da X35S ativo):** a ancoragem não funcionava; isso
   combinava com o `dr_mode`/papel do controlador. Continua havendo a entrada
@@ -146,7 +146,7 @@ hipótese como fato ao portar outra placa.
   - Não apareceu nada e `cat /sys/class/udc/*/state` continuou `not attached` → a porta
     não tem dados (só carga) ou o cabo é só-carga. **Repetir com o MESMO cabo que
     funciona na X55** (controle) antes de concluir.
-- **Ferramenta nova na imagem:** `walkmam-usb-watch.service` roda
+- **Ferramenta nova na imagem:** `ouvila-usb-watch.service` roda
   `usb-watch.sh` por 5 min no boot e grava `/boot/usb-watch.log` com um retrato do
   estado USB (UDC, `usb_role`, dispositivos em `/sys/bus/usb/devices`, `online` das
   fontes de energia) **no instante de cada mudança**, mais as últimas 40 linhas do
@@ -188,7 +188,7 @@ hipótese como fato ao portar outra placa.
   por ser "vertical", não tem base e foi retirada.)
 - **X55:** painel 720x1280 (retrato) com orientação DRM `left-up`. O sentido correto
   em nomenclatura do Weston **foi validado no aparelho: `rotate-90`**; por isso
-  o valor é editável em `/boot/walkmam.conf` (ver `build.md`).
+  o valor é editável em `/boot/ouvila.conf` (ver `build.md`).
 
 ## Wi-Fi e Bluetooth (RTL8821CS) — confirmado em 2026-10-24
 
@@ -243,19 +243,19 @@ hipótese como fato ao portar outra placa.
   `wifi.sh?action=status` e `action=scan` retornaram JSON correto (redes listadas) e
   `bt.sh?action=status` idem. Ou seja, o painel em si funciona; o que faltava para o BT
   era o controlador inicializar (fix de DTS acima).
-- **Rede de segurança:** `walkmam-radio-retry.service` roda após o boot e, se `wlan0`
+- **Rede de segurança:** `ouvila-radio-retry.service` roda após o boot e, se `wlan0`
   não existir, recarrega o módulo (até 3x); se `hci0` estiver sem endereço, reinicia o
   `hci_uart`/BlueZ. Log em `/boot/radio-retry.log`.
 - **Gerenciamento:** o Kodi 20 no Linux **não tem** UI de rádio (o gerenciador de
   Wi-Fi do Kodi existe apenas nos builds Windows/Android; no Linux não há nada no
   menu). Por isso o projeto entrega duas interfaces:
-  1. **Add-on `script.walkmam.radio`** ("Walkmam Radio") — diálogos nativos do Kodi em
+  1. **Add-on `script.ouvila.radio`** ("Ouvila Radio") — diálogos nativos do Kodi em
      **Add-ons → Add-ons de programas**. Usa `nmcli` para Wi-Fi e `bluetoothctl` para
      BT. É um `xbmc.python` 3.0.0 (script add-on), instalado em
-     `/usr/share/kodi/addons/script.walkmam.radio/`. O CI checa a sintaxe do
+     `/usr/share/kodi/addons/script.ouvila.radio/`. O CI checa a sintaxe do
      `default.py` (`py_compile`) para o build falhar antes em vez de dar erro só ao
      abrir no aparelho.
-  2. **Painel web** (`walkmam-webui.service`, busybox httpd na porta **8088**) para
+  2. **Painel web** (`ouvila-webui.service`, busybox httpd na porta **8088**) para
      quando se está no PC ou no celular: `http://10.55.0.1:8088` pelo cabo ou no IP do
      Wi-Fi.
   Cuidados ao mexer no add-on: `bluetoothctl` imprime `[NEW] Device <MAC> <nome>` no
@@ -270,7 +270,7 @@ hipótese como fato ao portar outra placa.
   `type=INPUT_ALPHANUM, option=ALPHANUM_HIDE_INPUT`.
   **GUI validada no aparelho (2026-10-24)** usando o JSON-RPC do Kodi em TCP **9090**
   (o `--webserver` da 8080 está desligado; a 9090 responde sem habilitar nada):
-  `Addons.GetAddonDetails` devolveu `{name: "Walkmam Radio", type: "xbmc.python.script",
+  `Addons.GetAddonDetails` devolveu `{name: "Ouvila Radio", type: "xbmc.python.script",
   version: "1.0.0", enabled: True, broken: False}`; `Addons.ExecuteAddon` abriu o
   diálogo (`Select dialog`, controle focado `Wi-Fi: status e conexao`); navegar para
   `Wi-Fi: procurar redes` e selecionar rodou o scan e abriu a lista de verdade

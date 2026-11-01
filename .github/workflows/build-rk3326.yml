@@ -461,7 +461,7 @@ jobs:
 
         # SSH com senha do root (mesma decisão da linha RK3566)
         sudo mkdir -p rootfs/etc/ssh/sshd_config.d
-        sudo tee rootfs/etc/ssh/sshd_config.d/10-walkmam.conf > /dev/null <<'EOF'
+        sudo tee rootfs/etc/ssh/sshd_config.d/10-ouvila.conf > /dev/null <<'EOF'
         PermitRootLogin yes
         PasswordAuthentication yes
         EOF
@@ -485,25 +485,25 @@ jobs:
       run: |
         # RK3326: UART2 em 0xFF160000 (o RK3566 usa 0xFE660000), DTBs rk3326-*
         # e o painel aplicado por overlay em vez de DTB próprio.
-        # Os WALKMAN_* vão explícitos no `sudo env`: `sudo -E` depende de SETENV
+        # Os OUVILA_* vão explícitos no `sudo env`: `sudo -E` depende de SETENV
         # no sudoers e nos runners isso não é garantido.
         # O sufixo da versão é calculado AQUI (fora do `sudo env`, que é uma
         # lista de atribuições e não aceita `if`).
         KVER_SUFIXO=
         [ "${KERNEL_SOURCE}" = "proprio" ] && KVER_SUFIXO="-${KERNEL_VERSION}"
         sudo env \
-          WALKMAN_UBOOT_DIR="$PWD/uboot" \
-          WALKMAN_KERNEL_DIR="$PWD/kernel" \
-          WALKMAN_ROOTFS_DIR="$PWD/rootfs" \
-          WALKMAN_OUTPUT_DIR="$PWD/img" \
-          WALKMAN_DTB_SOURCE="$PWD/devices/game-console-r35s/dts/rk3326-gameconsole-r36s.dtb" \
-          WALKMAN_IMAGE_NAME="rk3326-r36s-${VARIANT}-${LOADER}-kernel-${KERNEL_SOURCE}${KVER_SUFIXO}-sdcard.img" \
-          WALKMAN_EARLYCON=0xff160000 \
-          WALKMAN_DTBS_GLOB="rk3326-*.dtb" \
-          WALKMAN_FDT_DIR= \
-          WALKMAN_LABEL=walkmam \
-          WALKMAN_PANEL_OVERLAY_NAME=mipi-panel.dtbo \
-          WALKMAN_PANEL_OVERLAY_FILE="$PWD/dtbs/overlays/mipi-panel.dtbo" \
+          OUVILA_UBOOT_DIR="$PWD/uboot" \
+          OUVILA_KERNEL_DIR="$PWD/kernel" \
+          OUVILA_ROOTFS_DIR="$PWD/rootfs" \
+          OUVILA_OUTPUT_DIR="$PWD/img" \
+          OUVILA_DTB_SOURCE="$PWD/devices/game-console-r35s/dts/rk3326-gameconsole-r36s.dtb" \
+          OUVILA_IMAGE_NAME="rk3326-r36s-${VARIANT}-${LOADER}-kernel-${KERNEL_SOURCE}${KVER_SUFIXO}-sdcard.img" \
+          OUVILA_EARLYCON=0xff160000 \
+          OUVILA_DTBS_GLOB="rk3326-*.dtb" \
+          OUVILA_FDT_DIR= \
+          OUVILA_LABEL=ouvila \
+          OUVILA_PANEL_OVERLAY_NAME=mipi-panel.dtbo \
+          OUVILA_PANEL_OVERLAY_FILE="$PWD/dtbs/overlays/mipi-panel.dtbo" \
           build/build.sh game-console-r35s "$VARIANT"
         ls -l img/
         mkdir -p out
@@ -531,11 +531,11 @@ jobs:
         if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
           RELEASE="${TAG}"
           gh release view "$RELEASE" > /dev/null 2>&1 \
-            || gh release create "$RELEASE" --title "$RELEASE" --notes "Imagens do Walkmam (RK3566 e RK3326)."
+            || gh release create "$RELEASE" --title "$RELEASE" --notes "Imagens do Ouvila (RK3566 e RK3326)."
         else
           RELEASE="latest"
           gh release view "$RELEASE" > /dev/null 2>&1 \
-            || gh release create "$RELEASE" --prerelease --title "latest" --notes "Imagem rolante do Walkmam."
+            || gh release create "$RELEASE" --prerelease --title "latest" --notes "Imagem rolante do Ouvila."
         fi
         for f in out/*.img.gz out/*.img.gz.sha256; do
           [ -f "$f" ] || continue

@@ -1,11 +1,11 @@
 [Unit]
-Description=Walkmam Web UI (Wi-Fi/Bluetooth) na porta 8088
+Description=Ouvila Web UI (Wi-Fi/Bluetooth) na porta 8088
 After=NetworkManager.service bluetooth.service
 
 [Service]
 Type=simple
 # busybox httpd: serve estaticos e executa cgi-bin/*.
-ExecStart=/bin/busybox httpd -f -p 0.0.0.0:8088 -h /usr/local/share/walkmam-webui
+ExecStart=/bin/busybox httpd -f -p 0.0.0.0:8088 -h /usr/local/share/ouvila-webui
 Restart=always
 RestartSec=3
 

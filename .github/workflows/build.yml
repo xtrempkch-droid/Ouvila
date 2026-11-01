@@ -82,7 +82,7 @@ jobs:
           libharfbuzz-dev \
           gstreamer1.0-tools gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly
         ./build/media-player.sh --native
-        bash tools/test-media-player.sh build/walkmam-media
+        bash tools/test-media-player.sh build/ouvila-media
 
     - name: Fetch Sources (Mainline U-Boot, Mainline Kernel & RKBIN)
       run: |
@@ -138,7 +138,7 @@ jobs:
         else:
             alvo = '#include <configs/rk3568_common.h>'
             novo = (
-                '/* Walkmam: inclui o 2o slot SD (mmc2). Sem isto o mainline so\n'
+                '/* Ouvila: inclui o 2o slot SD (mmc2). Sem isto o mainline so\n'
                 ' * varre "mmc1 mmc0" e um sistema no mmc2 nunca inicia.\n'
                 ' */\n'
                 '#define BOOT_TARGETS "mmc1 mmc0 mmc2 nvme scsi usb pxe dhcp spi"\n'
@@ -674,7 +674,7 @@ jobs:
           fi
           for f in \
             variants/media-player/overlay/etc/systemd/system/media-player.service \
-            variants/media-player/overlay/etc/systemd/logind.conf.d/10-walkmam-media-power.conf \
+            variants/media-player/overlay/etc/systemd/logind.conf.d/10-ouvila-media-power.conf \
             variants/media-player/overlay/usr/local/bin/start-media-player.sh \
           ; do
             if [ ! -e "$f" ]; then
@@ -749,12 +749,12 @@ jobs:
         echo "--> (O Debian 12 vem com 'PermitRootLogin prohibit-password': sem isto,"
         echo "--> o login do root por senha é recusado mesmo com a senha certa.)"
         sudo mkdir -p rootfs/etc/ssh/sshd_config.d
-        sudo bash -c 'cat << "EOF" > rootfs/etc/ssh/sshd_config.d/10-walkmam.conf
+        sudo bash -c 'cat << "EOF" > rootfs/etc/ssh/sshd_config.d/10-ouvila.conf
         # Login do root por senha, para depuração via cabo USB (g_ether).
         PermitRootLogin yes
         PasswordAuthentication yes
         EOF'
-        sudo chmod 0644 rootfs/etc/ssh/sshd_config.d/10-walkmam.conf
+        sudo chmod 0644 rootfs/etc/ssh/sshd_config.d/10-ouvila.conf
 
         echo "--> Habilitando login automático no console serial (ttyS2)..."
         sudo mkdir -p rootfs/etc/systemd/system/serial-getty@ttyS2.service.d
@@ -777,12 +777,12 @@ jobs:
         echo "--> que nao tem o sistema). Monta em /storage/sdcard<N> e liga em"
         echo "--> /boot/roms/sdcard<N>, que o RetroArch ja mostra no navegador."
         sudo install -D -m 0755 \
-          common/overlay/usr/local/bin/walkmam-extra-storage.sh \
-          rootfs/usr/local/bin/walkmam-extra-storage.sh
+          common/overlay/usr/local/bin/ouvila-extra-storage.sh \
+          rootfs/usr/local/bin/ouvila-extra-storage.sh
         sudo install -D -m 0644 \
-          common/overlay/etc/systemd/system/walkmam-extra-storage.service \
-          rootfs/etc/systemd/system/walkmam-extra-storage.service
-        sudo chroot rootfs systemctl enable walkmam-extra-storage.service
+          common/overlay/etc/systemd/system/ouvila-extra-storage.service \
+          rootfs/etc/systemd/system/ouvila-extra-storage.service
+        sudo chroot rootfs systemctl enable ouvila-extra-storage.service
 
         echo "--> Instalando o utilitario de gravar a imagem no eMMC (opcional,"
         echo "--> manual). Confere o tamanho antes de escrever: o eMMC tem 3776 MiB."
@@ -860,8 +860,8 @@ jobs:
         # única dessa lógica; as variantes o consomem em vez de copiar.
         echo "--> Instalando o helper compartilhado de display (rotação/Weston)..."
         sudo install -D -m 0644 \
-          common/overlay/usr/local/share/walkmam/display.sh \
-          rootfs/usr/local/share/walkmam/display.sh
+          common/overlay/usr/local/share/ouvila/display.sh \
+          rootfs/usr/local/share/ouvila/display.sh
 
         if [ "$VARIANT" = "kodi" ]; then
           echo "--> [kodi] Instalando Kodi (GBM, sem X11) e dependências gráficas/áudio..."
@@ -896,23 +896,23 @@ jobs:
             echo "(Não foi possível confirmar via --help; a sessão será iniciada em Wayland.)"
           sudo chroot rootfs systemctl enable kodi.service
 
-          echo "--> [kodi] Instalando o add-on Walkmam Radio (Wi-Fi/Bluetooth no Kodi)..."
+          echo "--> [kodi] Instalando o add-on Ouvila Radio (Wi-Fi/Bluetooth no Kodi)..."
           echo "--> O Kodi 20 no Linux NAO tem gerenciador de radio (o de Wi-Fi so"
           echo "--> existe nos builds Windows/Android), entao o add-on chama o"
           echo "--> nmcli (NetworkManager) e o bluetoothctl (BlueZ) direto."
-          echo "--> Fica em Add-ons > Add-ons de programas > Walkmam Radio."
-          sudo mkdir -p rootfs/usr/share/kodi/addons/script.walkmam.radio
+          echo "--> Fica em Add-ons > Add-ons de programas > Ouvila Radio."
+          sudo mkdir -p rootfs/usr/share/kodi/addons/script.ouvila.radio
           sudo install -D -m 0644 \
-            variants/kodi/overlay/usr/share/kodi/addons/script.walkmam.radio/addon.xml \
-            rootfs/usr/share/kodi/addons/script.walkmam.radio/addon.xml
+            variants/kodi/overlay/usr/share/kodi/addons/script.ouvila.radio/addon.xml \
+            rootfs/usr/share/kodi/addons/script.ouvila.radio/addon.xml
           sudo install -D -m 0644 \
-            variants/kodi/overlay/usr/share/kodi/addons/script.walkmam.radio/default.py \
-            rootfs/usr/share/kodi/addons/script.walkmam.radio/default.py
+            variants/kodi/overlay/usr/share/kodi/addons/script.ouvila.radio/default.py \
+            rootfs/usr/share/kodi/addons/script.ouvila.radio/default.py
           # O add-on e script Python: se nao compilar, o Kodi falha so na hora de
           # abrir. Checamos a sintaxe aqui para o build quebrar antes.
           python3 -m py_compile \
-            variants/kodi/overlay/usr/share/kodi/addons/script.walkmam.radio/default.py \
-            && echo "--> script.walkmam.radio: sintaxe Python ok" \
+            variants/kodi/overlay/usr/share/kodi/addons/script.ouvila.radio/default.py \
+            && echo "--> script.ouvila.radio: sintaxe Python ok" \
             || { echo "!!! default.py com erro de sintaxe" >&2; exit 1; }
         fi
 
@@ -974,7 +974,7 @@ jobs:
           # "Permission denied" — foi o que fez este build falhar com os pacotes
           # e os cores ja corretos instalados.
           sed "s|@LIBRETRO_DIR@|$LIBRETRO_DIR_CFG|" \
-            variants/retroarch/overlay/etc/walkmam/retroarch.cfg \
+            variants/retroarch/overlay/etc/ouvila/retroarch.cfg \
             | sudo tee "$CFG_HOST" >/dev/null
           sudo chmod 0644 "$CFG_HOST"
           if ! sudo grep -qF "libretro_directory = \"$LIBRETRO_DIR_CFG\"" "$CFG_HOST"; then
@@ -1022,7 +1022,7 @@ jobs:
 
         if [ "$VARIANT" = "media-player" ]; then
           echo "--> [media-player] App de midia unico (DRM/KMS + FFmpeg + ALSA)."
-          echo "--> Nao ha Weston, navegador nem mpv: o binario walkmam-media e a"
+          echo "--> Nao ha Weston, navegador nem mpv: o binario ouvila-media e a"
           echo "--> camada inteira. As bibliotecas vem do manifesto da variante."
           LISTA=variants/media-player/packages/media-player.list
           PACOTES=$(sed -e 's/#.*//' -e 's/[[:space:]]//g' "$LISTA" | grep -v '^$' | tr '\n' ' ')
@@ -1070,10 +1070,10 @@ jobs:
           rm -rf "$SYSROOT"
           chmod +x build/media-player-sysroot.sh
           ./build/media-player-sysroot.sh "$SYSROOT"
-          WM_SYSROOT="$SYSROOT" WM_OUT=build/walkmam-media ./build/media-player.sh
+          WM_SYSROOT="$SYSROOT" WM_OUT=build/ouvila-media ./build/media-player.sh
 
           echo "--> [media-player] Instalando o binario e o launcher..."
-          sudo install -D -m 0755 build/walkmam-media rootfs/usr/local/bin/walkmam-media
+          sudo install -D -m 0755 build/ouvila-media rootfs/usr/local/bin/ouvila-media
           sudo install -D -m 0755 \
             variants/media-player/overlay/usr/local/bin/start-media-player.sh \
             rootfs/usr/local/bin/start-media-player.sh
@@ -1083,8 +1083,8 @@ jobs:
           # O logind, por padrão, desliga o aparelho ao ver a tecla de power —
           # isso impediria o toque curto (apagar a tela) de funcionar.
           sudo install -D -m 0644 \
-            variants/media-player/overlay/etc/systemd/logind.conf.d/10-walkmam-media-power.conf \
-            rootfs/etc/systemd/logind.conf.d/10-walkmam-media-power.conf
+            variants/media-player/overlay/etc/systemd/logind.conf.d/10-ouvila-media-power.conf \
+            rootfs/etc/systemd/logind.conf.d/10-ouvila-media-power.conf
 
           echo "--> [media-player] Pastas de midia (FAT para copiar do PC, ext4 para scp)..."
           echo "--> /boot/media: o unico lugar que se abre sem rede (a X35H tem o"
@@ -1094,7 +1094,7 @@ jobs:
 
           echo "--> [media-player] Conferindo que o binario roda (qemu-arm64)..."
           sudo cp /usr/bin/qemu-aarch64-static rootfs/usr/bin/ 2>/dev/null || true
-          if sudo chroot rootfs /usr/local/bin/walkmam-media --version; then
+          if sudo chroot rootfs /usr/local/bin/ouvila-media --version; then
             echo "--> ok: o binario executa e responde --version"
           else
             echo "!!! o binario nao executou no rootfs" >&2
@@ -1106,26 +1106,26 @@ jobs:
         echo "--> O Kodi não gerencia rádio; o painel fica acessível em"
         echo "--> http://10.55.0.1:8088 (cabo) ou no IP do Wi-Fi, sem sair do Kodi."
         sudo install -D -m 0644 \
-          variants/kodi/overlay/usr/local/share/walkmam-webui/index.html \
-          rootfs/usr/local/share/walkmam-webui/index.html
+          variants/kodi/overlay/usr/local/share/ouvila-webui/index.html \
+          rootfs/usr/local/share/ouvila-webui/index.html
         for cgi in wifi.sh bt.sh; do
           sudo install -D -m 0755 \
-            "variants/kodi/overlay/usr/local/share/walkmam-webui/cgi-bin/$cgi" \
-            "rootfs/usr/local/share/walkmam-webui/cgi-bin/$cgi"
+            "variants/kodi/overlay/usr/local/share/ouvila-webui/cgi-bin/$cgi" \
+            "rootfs/usr/local/share/ouvila-webui/cgi-bin/$cgi"
         done
         sudo install -D -m 0644 \
-          variants/kodi/overlay/etc/systemd/system/walkmam-webui.service \
-          rootfs/etc/systemd/system/walkmam-webui.service
-        sudo chroot rootfs systemctl enable walkmam-webui.service
+          variants/kodi/overlay/etc/systemd/system/ouvila-webui.service \
+          rootfs/etc/systemd/system/ouvila-webui.service
+        sudo chroot rootfs systemctl enable ouvila-webui.service
 
         echo "--> Instalando o retry de rádio (Wi-Fi/BT podem falhar no 1º probe)..."
         sudo install -D -m 0755 \
           variants/kodi/overlay/usr/local/bin/radio-retry.sh \
           rootfs/usr/local/bin/radio-retry.sh
         sudo install -D -m 0644 \
-          variants/kodi/overlay/etc/systemd/system/walkmam-radio-retry.service \
-          rootfs/etc/systemd/system/walkmam-radio-retry.service
-        sudo chroot rootfs systemctl enable walkmam-radio-retry.service
+          variants/kodi/overlay/etc/systemd/system/ouvila-radio-retry.service \
+          rootfs/etc/systemd/system/ouvila-radio-retry.service
+        sudo chroot rootfs systemctl enable ouvila-radio-retry.service
 
         echo "--> Instalando o usb-watch (diagnostico do USB na X35S/X35H)..."
         echo "--> Grava em /boot/usb-watch.log o que o kernel ve quando o cabo e"
@@ -1135,9 +1135,9 @@ jobs:
           variants/kodi/overlay/usr/local/bin/usb-watch.sh \
           rootfs/usr/local/bin/usb-watch.sh
         sudo install -D -m 0644 \
-          variants/kodi/overlay/etc/systemd/system/walkmam-usb-watch.service \
-          rootfs/etc/systemd/system/walkmam-usb-watch.service
-        sudo chroot rootfs systemctl enable walkmam-usb-watch.service
+          variants/kodi/overlay/etc/systemd/system/ouvila-usb-watch.service \
+          rootfs/etc/systemd/system/ouvila-usb-watch.service
+        sudo chroot rootfs systemctl enable ouvila-usb-watch.service
 
         echo "--> Conferindo os binários que o painel usa (resolve o PATH real do rootfs)..."
         if ! sudo chroot rootfs sh -c '
@@ -1174,8 +1174,8 @@ jobs:
         # 3584 MiB (3,5 GiB) e o teto: o eMMC destas placas tem 3776 MiB, e uma
         # imagem maior NAO cabe nele (o dd morreria no meio e deixaria o eMMC com
         # instalacao corrompida). A raiz usada e ~1,3 GB, entao sobra folga.
-        # Para cartoes grandes, aumente com WALKMAM_IMAGE_SIZE_MB.
-        IMAGE_SIZE_MB=${WALKMAM_IMAGE_SIZE_MB:-3584}
+        # Para cartoes grandes, aumente com OUVILA_IMAGE_SIZE_MB.
+        IMAGE_SIZE_MB=${OUVILA_IMAGE_SIZE_MB:-3584}
 
         echo "--> Criando arquivo de imagem vazio (${IMAGE_SIZE_MB}MB)..."
         dd if=/dev/zero of=${IMAGE_NAME} bs=1M count=${IMAGE_SIZE_MB} status=progress
@@ -1370,9 +1370,9 @@ jobs:
           echo "!!! AVISO: DTB da X35S/X35H ausente (${X35S_DEFAULT}); so a X55 bootara." >&2
         fi
 
-        echo "--> Gravando walkmam.conf (rotação da interface Kodi; editável no PC)..."
-        cat << 'WALKMAMCONF' > /mnt/boot/walkmam.conf
-        # Configuração editável do Walkmam. Lida no boot por start-kodi-wayland.sh.
+        echo "--> Gravando ouvila.conf (rotação da interface Kodi; editável no PC)..."
+        cat << 'OUVILACONF' > /mnt/boot/ouvila.conf
+        # Configuração editável do Ouvila. Lida no boot por start-kodi-wayland.sh.
         #
         # display_transform: auto | normal | rotate-90 | rotate-180 | rotate-270 |
         #                    flipped | flipped-rotate-90 | flipped-rotate-180 |
@@ -1401,7 +1401,7 @@ jobs:
         media_audio_out=default
         media_roots=/storage/media:/boot/media:/storage/sdcard1/media:/storage/sdcard2/media
         media_exit=poweroff
-        WALKMAMCONF
+        OUVILACONF
 
         # ROMs na partição FAT: é o ÚNICO lugar que se lê de um PC sem rede.
         # Essencial na X35H, onde o USB não ancora. Limite prático ~90 MB (o
@@ -1466,10 +1466,10 @@ jobs:
         # Sem aspas no delimitador para expandir $VARIANT (senão o rótulo diria
         # sempre "Kodi", mesmo na imagem de jogos).
         cat << BOOTCFG > /mnt/boot/extlinux/extlinux.conf
-        LABEL Walkmam (Powkiddy X55 - ${VARIANT:-kodi})
+        LABEL Ouvila (Powkiddy X55 - ${VARIANT:-kodi})
             KERNEL /Image
             FDT /dtbs/rk3566-powkiddy-x55.dtb
-            APPEND quiet rootwait earlycon=uart8250,mmio32,0xfe660000 console=ttyS2,1500000n8 console=tty1 root=PARTUUID=${ROOT_UUID} rw walkmam_x55_gamepad=rocknix-v1
+            APPEND quiet rootwait earlycon=uart8250,mmio32,0xfe660000 console=ttyS2,1500000n8 console=tty1 root=PARTUUID=${ROOT_UUID} rw ouvila_x55_gamepad=rocknix-v1
         BOOTCFG
 
         # Referência: variante usando o nosso próprio .dtb compilado, caso o
@@ -1483,13 +1483,13 @@ jobs:
 
         # Mesma imagem serve para X35S/X35H (mesmo DTB): no PC (partição FAT),
         # copie o conteúdo deste arquivo por cima de extlinux.conf e ajuste
-        # display_transform=normal em walkmam.conf.
+        # display_transform=normal em ouvila.conf.
         # X35S/X35H: o padrao continua sendo o dr_mode do SoC ("otg"), que e o que
         # preserva o modo *host* (pendrive/teclado). Testado no X35H: o DTB com
         # "peripheral" NAO resolveu ("PC nao ve nenhum dispositivo"), entao nao
         # trocamos o padrao por uma hipotese — a variante fica como alternativa.
         cat << X35SBOOT > /mnt/boot/extlinux/extlinux.conf.x35s
-        LABEL Walkmam (Powkiddy X35S / X35H)
+        LABEL Ouvila (Powkiddy X35S / X35H)
             KERNEL /Image
             FDT /${X35S_DEFAULT}
             APPEND quiet rootwait earlycon=uart8250,mmio32,0xfe660000 console=ttyS2,1500000n8 console=tty1 root=PARTUUID=${ROOT_UUID} rw
@@ -1497,7 +1497,7 @@ jobs:
 
         if [ -n "$PERIPH_FDT" ]; then
           cat << PERIPHBOOT > /mnt/boot/extlinux/extlinux.conf.x35s-peripheral
-        LABEL Walkmam (X35H/X35S - USB peripheral, teste)
+        LABEL Ouvila (X35H/X35S - USB peripheral, teste)
             KERNEL /Image
             FDT $PERIPH_FDT
             APPEND quiet rootwait earlycon=uart8250,mmio32,0xfe660000 console=ttyS2,1500000n8 console=tty1 root=PARTUUID=${ROOT_UUID} rw
@@ -1507,10 +1507,10 @@ jobs:
 
         if [ -n "$X55_PERIPH_FDT" ]; then
           cat << X55PERIPH > /mnt/boot/extlinux/extlinux.conf.x55-peripheral
-        LABEL Walkmam (Powkiddy X55 - USB peripheral, teste)
+        LABEL Ouvila (Powkiddy X55 - USB peripheral, teste)
             KERNEL /Image
             FDT $X55_PERIPH_FDT
-            APPEND quiet rootwait earlycon=uart8250,mmio32,0xfe660000 console=ttyS2,1500000n8 console=tty1 root=PARTUUID=${ROOT_UUID} rw walkmam_x55_gamepad=rocknix-v1
+            APPEND quiet rootwait earlycon=uart8250,mmio32,0xfe660000 console=ttyS2,1500000n8 console=tty1 root=PARTUUID=${ROOT_UUID} rw ouvila_x55_gamepad=rocknix-v1
         X55PERIPH
           echo "--> Alternativa de boot gravada: extlinux/extlinux.conf.x55-peripheral"
         fi

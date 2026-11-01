@@ -117,13 +117,13 @@ if [[ ! -f $ROOT_DIR/variants/$VARIANT/$PACKAGE_MANIFEST ]]; then
     exit 2
 fi
 
-UBOOT_DIR=$(resolve_repo_path "${WALKMAN_UBOOT_DIR:-uboot}" "WALKMAN_UBOOT_DIR") || exit 1
-KERNEL_DIR=$(resolve_repo_path "${WALKMAN_KERNEL_DIR:-kernel}" "WALKMAN_KERNEL_DIR") || exit 1
-ROOTFS_DIR=$(resolve_repo_path "${WALKMAN_ROOTFS_DIR:-rootfs}" "WALKMAN_ROOTFS_DIR") || exit 1
-OUTPUT_DIR=$(resolve_repo_path "${WALKMAN_OUTPUT_DIR:-output}" "WALKMAN_OUTPUT_DIR") || exit 1
-IMAGE_NAME=${WALKMAN_IMAGE_NAME:-walkmam-${DEVICE}-${VARIANT}.img}
+UBOOT_DIR=$(resolve_repo_path "${OUVILA_UBOOT_DIR:-uboot}" "OUVILA_UBOOT_DIR") || exit 1
+KERNEL_DIR=$(resolve_repo_path "${OUVILA_KERNEL_DIR:-kernel}" "OUVILA_KERNEL_DIR") || exit 1
+ROOTFS_DIR=$(resolve_repo_path "${OUVILA_ROOTFS_DIR:-rootfs}" "OUVILA_ROOTFS_DIR") || exit 1
+OUTPUT_DIR=$(resolve_repo_path "${OUVILA_OUTPUT_DIR:-output}" "OUVILA_OUTPUT_DIR") || exit 1
+IMAGE_NAME=${OUVILA_IMAGE_NAME:-ouvila-${DEVICE}-${VARIANT}.img}
 if [[ ! $IMAGE_NAME =~ ^[a-zA-Z0-9._-]+\.img$ ]]; then
-    echo "WALKMAN_IMAGE_NAME must be a filename ending in .img." >&2
+    echo "OUVILA_IMAGE_NAME must be a filename ending in .img." >&2
     exit 2
 fi
 
@@ -134,8 +134,8 @@ for directory in "$UBOOT_DIR" "$KERNEL_DIR" "$ROOTFS_DIR"; do
     fi
 done
 
-if [[ -n ${WALKMAN_DTB_SOURCE:-} ]]; then
-    DTB_SOURCE=$(resolve_repo_path "$WALKMAN_DTB_SOURCE" "WALKMAN_DTB_SOURCE") || exit 1
+if [[ -n ${OUVILA_DTB_SOURCE:-} ]]; then
+    DTB_SOURCE=$(resolve_repo_path "$OUVILA_DTB_SOURCE" "OUVILA_DTB_SOURCE") || exit 1
 else
     DTB_SOURCE="$KERNEL_DIR/arch/arm64/boot/dts/rockchip/$DTB_NAME"
 fi

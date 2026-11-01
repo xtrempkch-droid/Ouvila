@@ -16,5 +16,5 @@ Esse documento é a referência para portar as placas para outro sistema.
 `packages/<variante>.list` e o `overlay/` com serviços e arquivos daquela experiência.
 Hoje existem duas implementadas — `kodi` (multimídia) e `retroarch` (jogos) — e o
 workflow escolhe qual montar pelo input `variant`. O que é comum às duas (rotação e
-start do Weston) fica em `common/overlay/usr/local/share/walkmam/display.sh`. Detalhes
+start do Weston) fica em `common/overlay/usr/local/share/ouvila/display.sh`. Detalhes
 em [variantes.md](variantes.md).

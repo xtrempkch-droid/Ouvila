@@ -1,4 +1,4 @@
-/* Walkmam Media — app de mídia único para os handhelds RK3566.
+/* Ouvila Media — app de mídia único para os handhelds RK3566.
  *
  * Este programa é a camada inteira: desenha no DRM/KMS, decodifica com as
  * bibliotecas do FFmpeg, toca no ALSA e lê o controle/gamepad por evdev. Não
@@ -7,7 +7,7 @@
  * de vídeo e a placa de som directamente.
  *
  * Layout do módulo:
- *   util.c     log, arquivos, configuração (/boot/walkmam.conf), textos
+ *   util.c     log, arquivos, configuração (/boot/ouvila.conf), textos
  *   gfx.c      canvas XRGB8888: retângulos, cantos arredondados, gradiente, alpha
  *   font.c     FreeType + cache de glifos (UTF-8)
  *   drm.c      KMS: dumb buffer, page flip, rotação por software
@@ -26,7 +26,7 @@
  * redireções C23 (`__isoc23_strtol`, `__isoc23_sscanf`, `__isoc23_fscanf`), que
  * passam a exigir GLIBC_2.38 em tempo de execução. A imagem roda bookworm
  * (glibc 2.36), então o binário compilado no runner morria com
- *   version `GLIBC_2.38' not found (required by /usr/local/bin/walkmam-media)
+ *   version `GLIBC_2.38' not found (required by /usr/local/bin/ouvila-media)
  * _DEFAULT_SOURCE dá POSIX.1-2008 + BSD (o que estes arquivos usam: O_CLOEXEC,
  * clock_gettime, localtime_r, execlp, ...) sem pedir C23. */
 #define _DEFAULT_SOURCE
@@ -49,7 +49,7 @@
 /* -------------------------------------------------------------- idiomas --- */
 
 /* 10 idiomas na UI. O padrão é pt-BR; a escolha é gravada no arquivo de ajustes
- * (/boot/walkmam-media.conf) para sobreviver a um reboot. */
+ * (/boot/ouvila-media.conf) para sobreviver a um reboot. */
 enum {
     WM_LANG_PT = 0,
     WM_LANG_EN,
@@ -254,7 +254,7 @@ void wm_log_open(const char *path);
 void wm_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 void wm_log_close(void);
 
-/* Lê "chave=valor" de walkmam.conf; CR do FAT é removido. */
+/* Lê "chave=valor" de ouvila.conf; CR do FAT é removido. */
 void wm_conf_read(WmConfig *cfg, const char *path);
 /* "auto"/vazio -> decide pelo /proc/device-tree/model. */
 const char *wm_transform_for_model(const char *requested);
@@ -274,8 +274,8 @@ size_t wm_utf8_copy(char *dst, size_t size, const char *src, size_t max_bytes);
 
 /* ------------------------------------------------------------- ajustes --- */
 
-/* Arquivo de ajustes que o próprio app escreve (/boot/walkmam-media.conf, com
- * queda para /storage/.config). Separado do walkmam.conf de propósito: aquele é
+/* Arquivo de ajustes que o próprio app escreve (/boot/ouvila-media.conf, com
+ * queda para /storage/.config). Separado do ouvila.conf de propósito: aquele é
  * editado à mão no cartão e não deve ser reescrito pelo app. */
 const char *wm_settings_path(void);
 bool wm_settings_load(void);

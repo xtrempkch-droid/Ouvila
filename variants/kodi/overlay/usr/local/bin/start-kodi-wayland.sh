@@ -14,7 +14,7 @@ export WAYLAND_DISPLAY=wayland-0
 
 KODI_BIN=${KODI_BIN:-/usr/bin/kodi}
 WESTON_LOG=${WESTON_LOG:-/var/log/weston.log}
-WALKMAM_CONF=${WALKMAM_CONF:-/boot/walkmam.conf}
+OUVILA_CONF=${OUVILA_CONF:-/boot/ouvila.conf}
 KODI_LOG=${KODI_LOG:-/boot/kodi-start.log}
 
 say_tty() {
@@ -38,12 +38,12 @@ transform_do_modelo() {
 }
 
 # Rotação da saída DSI-1 (valores do Weston). Vem de "display_transform=<valor>"
-# em walkmam.conf, na partição FAT (BOOT), editável no PC sem recompilar.
+# em ouvila.conf, na partição FAT (BOOT), editável no PC sem recompilar.
 # "auto" (ou vazio/valor inválido) usa o padrão do modelo.
 read_transform() {
     value=
-    if [ -r "$WALKMAM_CONF" ]; then
-        value=$(sed -n 's/^[[:space:]]*display_transform[[:space:]]*=[[:space:]]*//p' "$WALKMAM_CONF" \
+    if [ -r "$OUVILA_CONF" ]; then
+        value=$(sed -n 's/^[[:space:]]*display_transform[[:space:]]*=[[:space:]]*//p' "$OUVILA_CONF" \
             | tail -n 1 | tr -d '\r[:space:]')
     fi
     case "$value" in
