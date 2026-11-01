@@ -20,6 +20,7 @@
 #include <unistd.h>
 
 #define REDES_MAX 32
+#define BT_DEV_MAX 16
 
 struct Radio {
     pthread_mutex_t lock;
@@ -43,6 +44,9 @@ struct Radio {
 
     struct Rede redes[REDES_MAX];
     int n_redes;
+
+    struct BtDevice bt_devs[BT_DEV_MAX];
+    int n_bt_devs;
 };
 
 /* Roda um comando e captura stdout. Sem shell: argumentos fixos, nada de
@@ -140,6 +144,11 @@ static void atualizar_estado_caro(Radio *r)
     char ip[32] = "";
     bool bt_ligado = false;
     char mac[32] = "";
+    struct BtDevice devs[BT_DEV_MAX];
+    int n_devs = 0;
+    const char *const argv_devices[] = { "bluetoothctl", "devices", NULL };
+
+    memset(devs, 0, sizeof(devs));
 
     if (comando_existe("nmcli")) {
         const char *argv[] = { "nmcli", "-t", "-f",
@@ -181,6 +190,55 @@ static void atualizar_estado_caro(Radio *r)
                 wm_trim(mac);
             }
         }
+        /* Lista de dispositivos: o menu precisa de MAC + nome para conectar.
+         * Formato de `bluetoothctl devices`: "Device AA:BB:CC:DD:EE:FF nome".
+         * O nome pode ter espaço, então não dá para usar sscanf com %s. */
+        if (executar(argv_devices, saida, sizeof(saida)) == 0) {
+            char *linha = saida;
+
+            while (linha && *linha && n_devs < BT_DEV_MAX) {
+                char *nl = strchr(linha, '\n');
+                if (nl) {
+                    *nl = '\0';
+                }
+                if (strncmp(linha, "Device ", 7) == 0 && strlen(linha) >= 24) {
+                    struct BtDevice *d = &devs[n_devs++];
+
+                    memset(d, 0, sizeof(*d));
+                    {
+                        char copia_mac[20];
+                        char copia_nome[80];
+
+                        snprintf(copia_mac, sizeof(copia_mac), "%.19s", linha + 7);
+                        wm_trim(copia_mac);
+                        snprintf(d->mac, sizeof(d->mac), "%s", copia_mac);
+                        copia_nome[0] = '\0';
+                        if (strlen(linha) > 25) {
+                            snprintf(copia_nome, sizeof(copia_nome), "%.70s", linha + 25);
+                            wm_trim(copia_nome);
+                        }
+                        snprintf(d->nome, sizeof(d->nome), "%s",
+                                 copia_nome[0] ? copia_nome : d->mac);
+                    }
+                }
+                linha = nl ? nl + 1 : NULL;
+            }
+        }
+        /* Quem está conectado/pareado agora. */
+        for (int i = 0; i < n_devs; i++) {
+            char info[512];
+            const char *argv_info[] = { "bluetoothctl", "info", devs[i].mac, NULL };
+
+            if (executar(argv_info, info, sizeof(info)) != 0) {
+                continue;
+            }
+            if (strstr(info, "Connected: yes")) {
+                devs[i].conectado = true;
+            }
+            if (strstr(info, "Paired: yes")) {
+                devs[i].pareado = true;
+            }
+        }
     }
 
     pthread_mutex_lock(&r->lock);
@@ -188,6 +246,8 @@ static void atualizar_estado_caro(Radio *r)
     snprintf(r->ip, sizeof(r->ip), "%s", ip);
     r->bt_ligado = bt_ligado;
     snprintf(r->bt_mac, sizeof(r->bt_mac), "%s", mac);
+    memcpy(r->bt_devs, devs, sizeof(devs));
+    r->n_bt_devs = n_devs;
     pthread_mutex_unlock(&r->lock);
 }
 
@@ -447,6 +507,10 @@ static void *thread_pedido(void *arg)
     } else if (p->acao == 3) {
         const char *argv[] = { "bluetoothctl", "connect", p->mac, NULL };
         rc = executar(argv, saida, sizeof(saida));
+    } else if (p->acao == 4) {
+        const char *argv[] = { "bluetoothctl", "discoverable",
+                               p->bt_on ? "on" : "off", NULL };
+        rc = executar(argv, saida, sizeof(saida));
     }
 
     pthread_mutex_lock(&p->radio->lock);
@@ -543,4 +607,35 @@ void radio_bt_connect(Radio *r, const char *mac)
     p->acao = 3;
     snprintf(p->mac, sizeof(p->mac), "%.*s", (int) sizeof(p->mac) - 1, mac ? mac : "");
     disparar(r, p);
+}
+
+int radio_bt_dispositivos(Radio *r, struct BtDevice *out, int max)
+{
+    int n;
+
+    if (!r || !out || max <= 0) {
+        return 0;
+    }
+    pthread_mutex_lock(&r->lock);
+    n = r->n_bt_devs < max ? r->n_bt_devs : max;
+    memcpy(out, r->bt_devs, (size_t) n * sizeof(*out));
+    pthread_mutex_unlock(&r->lock);
+    return n;
+}
+
+void radio_bt_visivel(Radio *r, bool ligar)
+{
+    Radio *radio = r;
+    PedidoRadio *p;
+
+    if (!radio) {
+        return;
+    }
+    p = calloc(1, sizeof(*p));
+    if (!p) {
+        return;
+    }
+    p->acao = 4;
+    p->bt_on = ligar;
+    disparar(radio, p);
 }

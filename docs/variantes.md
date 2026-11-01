@@ -10,9 +10,9 @@ diferença é o que entra no rootfs e qual serviço toma o `tty1` no boot.
 | Camadas usadas | Weston + Kodi | Weston + RetroArch | **nenhuma** — DRM/KMS + FFmpeg + ALSA |
 | Serviço no tty1 | `kodi.service` | `retroarch.service` | `media-player.service` |
 | Artefato | `rk3566-x55-mainline-sdcard-image` | `rk3566-x55-retroarch-sdcard-image` | `rk3566-x55-media-player-sdcard-image` |
-| Add-on de rádio no app | `script.walkmam.radio` | — (painel web) | aba **Rádio** dentro do app |
+| Add-on de rádio no app | `script.walkmam.radio` | — (painel web) | Wi-Fi/BT no **menu** (não há aba de rádio: estes aparelhos não têm AM/FM) |
 | Cores | — | NES, SNES, GB/GBC, GBA, PC Engine, PS1 | — |
-| Status | validado no X55 e X35H | build #116 verde; hardware parcial | **X35H: app sobe, desenha e toca; correções de controle na v0.2** |
+| Status | validado no X55 e X35H | build #116 verde; hardware parcial | **X35H: app sobe, desenha e toca. v0.3: menu com submenus, biblioteca por álbum, 10 idiomas, 5 temas, equalizador** |
 
 O que é **igual** nas três: kernel, U-Boot, DTBs (X55 + X35S/X35H), rotação
 (`display_transform`), rede USB (`g_ether`, 10.55.0.1), SSH `root/root`, painel web de
@@ -90,20 +90,97 @@ mora em [`variants/media-player/src`](../variants/media-player/src) e é compila
 runner (cross `aarch64-linux-gnu-gcc`, cabeçalhos do **bookworm arm64** — é o que
 garante compatibilidade com o FFmpeg 5.1 da imagem).
 
-### Abas
+### Abas (4, com L/R)
 
 | Aba | O que faz |
 | --- | --- |
-| **Música** | capa do álbum (`folder.jpg`/`cover.png`), título/artista/álbum, barra de progresso, controles e a biblioteca |
+| **Música** | capa do álbum (`folder.jpg`/`cover.png`), título/artista/álbum, barra de progresso, controles (com o botão de **modo**) e a lista de faixas |
 | **Vídeos** | grade da biblioteca; ao escolher, reproduz **em tela cheia** com OSD (progresso e dicas) |
-| **Rádio** | Wi-Fi (scan/conectar com teclado na tela) e Bluetooth, lendo o estado do kernel |
-| **Sistema** | **só informação**: modelo, bateria, armazenamento, brilho atual. Nada de configuração aqui — ver abaixo |
+| **Biblioteca** | navegação **por álbum**: a lista da esquerda são os álbuns (com contagem de faixas); A abre o álbum e mostra as faixas à direita, onde A toca. B/◀ volta para a lista de álbuns |
+| **Sistema** | **só informação**: modelo, uptime, bateria, volume, ALSA, armazenamento e brilho atual. Nada de configuração aqui |
+
+A aba **Rádio foi removida** (v0.3): estes aparelhos não têm rádio AM/FM, e Wi-Fi e
+Bluetooth passaram a ser itens do menu. O lugar dela na barra virou a Biblioteca.
 
 Na aba Sistema não se configura nada de propósito: ali ficam apenas os dados do
 aparelho, e o botão de volume do hardware não corre o risco de mexer no brilho (foi um
-bug no aparelho). Tudo o que é ajuste mora no **menu de configurações**, aberto com
-**SELECT** em qualquer aba: brilho (◀ ▶, com piso de 10%), apagar a tela, desligar,
-reiniciar e fechar.
+bug no aparelho).
+
+### Menu de configurações (SELECT)
+
+O menu tem uma raiz e **submenus**. ◀ ▶ muda o valor, A confirma/entra, B volta um
+nível (no equalizador, o B volta para o Som).
+
+| Item | O que faz |
+| --- | --- |
+| **Brilho** | ◀ ▶ em passos de 5%, com **piso de 10%** (abaixo disso o painel fica ilegível e parece travado). Para economizar bateria de verdade existe "Apagar a tela" |
+| **Wi-Fi** | procura redes, lista SSID/sinal/segurança; rede com senha abre o **teclado na tela**; rede aberta conecta direto |
+| **Bluetooth** | liga/desliga o controlador, busca dispositivos e conecta pelo MAC da lista |
+| **Som** | predefinição do equalizador, pré-amplificação, **equalizador de 10 bandas**, melhoria de som (modo neural) e restaurar padrão |
+| **Idioma** | 10 idiomas; a escolha é gravada e vale na hora |
+| **Relógio** | ano/mês/dia/hora/minuto com ◀ ▶ (o dia respeita o mês e o ano bissexto) e "Aplicar data e hora" |
+| **Tema** | os 5 temas; ◀ ▶ pré-visualiza ao vivo |
+| **Apagar a tela** | DPMS off (mesmo efeito do toque no power) |
+| **Desligar / Reiniciar** | diálogo de confirmação; o foco começa em **Cancelar** |
+| **Fechar menu** | ou B |
+
+Tudo o que o menu muda é gravado em **`/boot/walkmam-media.conf`** (o próprio app
+escreve; o `walkmam.conf` continua sendo editado à mão no cartão):
+`idioma`, `tema`, `modo` (modo de reprodução), `eq0`..`eq9`, `eq_preset`, `preamp`,
+`neural`.
+
+### Modos de reprodução
+
+O quinto botão da barra de controles (◀ ▶ até ele, A muda) gira entre:
+
+| Modo | No fim da faixa |
+| --- | --- |
+| em ordem | toca a próxima; **para** quando chega ao fim da lista |
+| repetir álbum | toca a próxima, dando a volta no fim |
+| repetir faixa | toca a mesma de novo |
+| aleatória | sorteia uma faixa de áudio da biblioteca |
+
+O modo também é gravado nos ajustes (`modo=0..3`), então sobrevive a um reboot.
+
+### Equalizador (menu → Som)
+
+10 bandas de oitava (31, 62, 125, 250, 500, 1k, 2k, 4k, 8k e 16k Hz), ±12 dB, mais
+pré-amplificação de −12 a +12 dB. Oito predefinições (Plano, Rock, Pop, Jazz, Clássico,
+Voz, Graves, Eletrônico) e "Personalizado", que é o que o usuário montou.
+
+É tudo software, no caminho do áudio, **antes** do `snd_pcm_writei`: filtros *peaking*
+(RBJ) em cascata por canal, pré-amplificação e um limitador suave (só entra quando
+alguma banda soma ganho). Com o preset Plano e preamp 0 o processamento é pulado — não
+custa CPU.
+
+**Melhoria de som (modo neural)**: o RK3566 tem NPU, mas o driver só existe no kernel
+de fornecedor (`/dev/rknpu`). No mainline esse dispositivo não existe, então o item
+aparece **desativado** e com a explicação na tela — foi o que o usuário pediu ("em caso
+de não disponibilidade o botão não poderá ser ativado"). No dia em que o kernel trouxer
+o NPU, o item passa a aceitar ser ligado sem mudar o app.
+
+### Idiomas
+
+Português (Brasil), inglês, chinês mandarim, hindi, espanhol, árabe padrão moderno,
+bengali, indonésio, urdu e francês. Os textos ficam em
+[`src/i18n.c`](../variants/media-player/src/i18n.c), indexados pelo enum `MSG_*` do
+`wm.h`; o que faltar cai no português (nunca aparece ponteiro vazio).
+
+Três desses alfabetos não funcionam com "um glifo por caractere":
+**árabe e urdu juntam as letras** e **hindi e bengali reordenam as vogais**. Quem faz
+isso é o **HarfBuzz** ([`src/font.c`](../variants/media-player/src/font.c)); o FreeType
+só rasteriza o índice de glifo que o HarfBuzz escolheu. Como a DejaVu não tem árabe,
+devanágari, bengali nem chinês, cada `Font` carrega faces de reserva e o texto é fatiado
+por alfabeto — o mesmo rótulo pode misturar "Wi-Fi " (DejaVu) com "شبكة" (Noto Arabic).
+
+### Temas
+
+Os cinco protótipos de [`layout/`](../variants/media-player/layout) viraram dados em
+[`src/tema.c`](../variants/media-player/src/tema.c): **Neon** (azul-noite + rosa),
+**OLED vermelho**, **Monocromático**, **Mono com brilho** (o mesmo preto/branco com
+realce forte no item focado) e **Vidro** (painéis translúcidos, estilo iOS). Nenhuma cor
+está fixa no código da UI: tudo sai de `tema_atual()`, então acrescentar um tema é
+acrescentar uma entrada na tabela.
 
 ### Controles
 
@@ -112,14 +189,14 @@ Não há tela sensível ao toque nesses aparelhos, então tudo é navegável pel
 | Botão | Ação |
 | --- | --- |
 | **A** (`BTN_EAST`) / Enter | abre/confirma |
-| **B** (`BTN_SOUTH`) / Esc | volta (na tela cheia, sai do vídeo; no menu, fecha) |
+| **B** (`BTN_SOUTH`) / Esc | volta (na tela cheia, sai do vídeo; no menu, volta um nível; na Biblioteca com álbum aberto, volta para a lista de álbuns) |
 | **X** (`BTN_NORTH`) / Espaço | tocar/pausar |
-| **Y** (`BTN_WEST`) / F1 | menu (no rádio, buscar redes) |
+| **Y** (`BTN_WEST`) / F1 | menu (o mesmo do SELECT) |
 | **SELECT** (`BTN_SELECT`) | abre o **menu de configurações** em qualquer aba |
 | **L / R** (`BTN_TL`/`BTN_TR`) | troca de aba |
 | **L1 / R1** (`BTN_TL2`/`BTN_TR2`) | música: faixa anterior/próxima; vídeo: −30 s/+30 s; grade: pula uma página |
 | **D-pad / analógico esquerdo** | navegação (segurar repete) |
-| **◀ ▶ na tela cheia** | −10 s / +10 s |
+| **◀ ▶ na tela cheia / no menu** | −10 s / +10 s · muda o valor do item |
 | **Volume do aparelho** (`gpio-keys-vol`) | volume, em qualquer tela — só volume |
 
 ### Botão de power
@@ -176,6 +253,20 @@ lidos direto do arquivo. Sem tag, `Artista - Título.ext` vira artista/título.
 O brilho é ajustado no **menu (SELECT) → Brilho** com ◀ ▶, gravando em
 `/sys/class/backlight/*/brightness` e respeitando o piso de 10%.
 
+Esses cinco são **de boot** e continuam sendo editados à mão no cartão. O que o
+**menu** muda vai para outro arquivo, `/boot/walkmam-media.conf`, que o próprio app
+escreve (o `walkmam.conf` nunca é reescrito pelo app):
+
+| Chave | Valores |
+| --- | --- |
+| `idioma` | `pt`, `en`, `zh`, `hi`, `es`, `ar`, `bn`, `id`, `ur`, `fr` |
+| `tema` | `neon`, `oled`, `mono`, `mono-glow`, `vidro` |
+| `modo` | `0` em ordem, `1` repetir álbum, `2` repetir faixa, `3` aleatória |
+| `eq_preset` | `0`..`8` (8 = personalizado) |
+| `eq0`..`eq9` | ganho de cada banda em dB, −12..+12 |
+| `preamp` | pré-amplificação em dB, −12..+12 |
+| `neural` | `0`/`1` (só tem efeito se houver NPU) |
+
 ### Testes sem o aparelho
 
 ```sh
@@ -223,6 +314,7 @@ O binário tem modos que existem só para isso:
 ```sh
 walkmam-media --screenshot tela.ppm --tab videos      # desenha uma aba e grava
 walkmam-media --screenshot menu.ppm --menu            # com o menu de configurações aberto
+walkmam-media --screenshot z.ppm --idioma ar --tema vidro   # idioma e tema iniciais
 walkmam-media --selftest                              # exercita a navegação
 walkmam-media --scan                                  # lista a biblioteca
 walkmam-media --play filme.mkv --frame-out q.ppm      # decodifica e grava um quadro
@@ -231,8 +323,12 @@ walkmam-media --play filme.mkv --frame-out q.ppm      # decodifica e grava um qu
 O `--selftest` é o que pega regressão de navegação: ele manda teclas sintéticas
 (OK, L/R, setas, volume, B, power, SELECT, L1/R1) e confere o que a UI publica —
 não substitui o teste no aparelho, mas evita descobrir no cartão que a lista parou de
-responder. São **21 casos** e o script exige 20+ (um selftest que aborta cedo — biblioteca
+responder. São **43 casos** e o script exige 40+ (um selftest que aborta cedo — biblioteca
 vazia, por exemplo — não pode "passar").
+
+A partir da v0.3 o `tools/test-media-player.sh` tem ainda o grupo **3b**: desenha a UI
+nos **10 idiomas** e nos **5 temas** e exige que as telas resultantes sejam *diferentes*
+entre si (um tema que não aplica, ou uma tradução que não carrega, cai aqui).
 
 No CI, a variante roda `tools/test-media-player.sh` **antes** de compilar o kernel
 (binário nativo, ~2 min) e, no passo do rootfs, executa o binário **arm64** com qemu
@@ -266,6 +362,18 @@ navegação pelas abas responde. A biblioteca leu as faixas do cartão.
 3. **vídeo em tela cheia**: o RK3566 mainline não tem decode de vídeo por hardware, então
    720p é decodificado em software. 640x480/720x480 deve ir bem; 720p60 provavelmente
    não. Só o decodificador offline foi testado (quadro sai com conteúdo).
+4. **tudo o que a v0.3 acrescentou** (menu com submenus, biblioteca por álbum, 10
+   idiomas, 5 temas, equalizador, relógio, modos de reprodução): validado só offline —
+   compila para arm64 contra os cabeçalhos do bookworm, 43 casos de selftest verdes, as
+   4 abas + menu + 10 idiomas + 5 temas desenham, e o decodificador entrega quadro. O
+   que **só o aparelho** pode dizer:
+   - o árabe/hindi/chinês **aparecem ligados/corretos** na tela (o shaping foi medido
+     fora do aparelho: "مرحبا" sai com 46 px ligado contra 84 px com as letras soltas);
+   - o **equalizador muda o som** de forma audível (e não distorce);
+   - o **Wi-Fi/BT pelo menu** acha redes/dispositivos na X55 (na X35H não há rádio: o
+     SDIO não responde, então os dois itens aparecem como "Ausente");
+   - o **relógio** aplica de verdade (o app roda como root e usa `clock_settime`;
+     sem `CAP_SYS_TIME` ele falha em silêncio e o log registra o motivo).
 4. **desempenho de música**: abrir a próxima faixa a cada fim recria o pipeline do
    FFmpeg — se aparecer um intervalo audível entre faixas, o próximo passo é manter um
    leitor pronto (gapless).

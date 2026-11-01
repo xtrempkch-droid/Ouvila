@@ -42,11 +42,11 @@ TRIPLE=aarch64-linux-gnu
 # teste de verdade em vez de um falso positivo.
 DEV=(
     libavformat-dev libavcodec-dev libavutil-dev libswscale-dev libswresample-dev
-    libdrm-dev libasound2-dev libfreetype-dev
+    libdrm-dev libasound2-dev libfreetype-dev libharfbuzz-dev
 )
 RUNTIME=(
     libavformat59 libavcodec59 libavutil57 libswscale6 libswresample4
-    libdrm2 libasound2 libfreetype6
+    libdrm2 libasound2 libfreetype6 libharfbuzz0b
 )
 
 mkdir -p "$DESTINO"
@@ -149,7 +149,8 @@ echo "    ${#VISTO[@]} pacotes na closura"
 echo "--> conferindo cabeçalhos obrigatórios"
 for h in \
     usr/include/xf86drm.h usr/include/xf86drmMode.h usr/include/alsa/asoundlib.h \
-    usr/include/freetype2/ft2build.h usr/include/$TRIPLE/libavformat/avformat.h \
+    usr/include/freetype2/ft2build.h usr/include/harfbuzz/hb-ft.h \
+    usr/include/$TRIPLE/libavformat/avformat.h \
     usr/include/$TRIPLE/libavcodec/avcodec.h usr/include/$TRIPLE/libswscale/swscale.h \
     usr/include/$TRIPLE/libswresample/swresample.h
 do
@@ -178,7 +179,7 @@ done
 # É exatamente o furo que aparece como "cannot find -lavformat" no CI.
 echo "--> conferindo bibliotecas de link"
 FALTOU=0
-for lib in avformat avcodec avutil swscale swresample drm asound freetype; do
+for lib in avformat avcodec avutil swscale swresample drm asound freetype harfbuzz; do
     alvo=$(find "$DESTINO/usr/lib" -name "lib$lib.so" -type l 2>/dev/null | head -1)
     if [ -z "$alvo" ]; then
         echo "!!! lib$lib.so ausente (o pacote -dev nao foi extraido?)" >&2

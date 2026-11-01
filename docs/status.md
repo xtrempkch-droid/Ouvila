@@ -3,9 +3,52 @@
 Ponto de partida para continuar o trabalho depois de testar no aparelho. Diz o que já
 está pronto, o que ainda é **hipótese** e exatamente o que testar e devolver.
 
-## PONTO DE RETOMADA (2026-11-01)
+## PONTO DE RETOMADA (2026-11-01, v0.3)
 
 > Leia esta seção antes de qualquer coisa. O resto do documento é o histórico.
+
+### Variante `media-player` v0.3: a expansão pedida pelo usuário
+
+Depois do primeiro teste no aparelho o usuário pediu um pacote grande de mudanças.
+Tudo foi implementado **offline** (compila para arm64 contra o bookworm, 43 casos de
+selftest, as 4 abas + menu + 10 idiomas + 5 temas desenham). **Nada disto foi testado
+no aparelho ainda** — é o que a tag `media-player-v0.3` deve levar para o cartão.
+
+O que mudou:
+
+1. **Wi-Fi e Bluetooth saíram da aba Rádio e foram para o menu** (submenus com lista de
+   redes/dispositivos). A aba Rádio **deixou de existir** — estes aparelhos não têm
+   AM/FM. O lugar dela na barra virou a **Biblioteca**.
+2. **Aba Biblioteca**: navegação por **álbum** (lista de álbuns → faixas do álbum),
+   como o usuário pediu ("na lista da biblioteca tem que ser navegável para escolher o
+   álbum").
+3. **Modos de reprodução** no quinto botão dos controles: em ordem, repetir álbum,
+   repetir faixa e aleatória. Gravado em `/boot/walkmam-media.conf`.
+4. **Equalizador de 10 bandas** no menu → Som, com 8 predefinições, pré-amplificação e
+   limitador. **Melhoria de som (modo neural)** aparece **desativada** porque o mainline
+   não tem `/dev/rknpu` — era o pedido explícito ("em caso de não disponibilidade o
+   botão não poderá ser ativado").
+5. **10 idiomas** (pt, en, zh, hi, es, ar, bn, id, ur, fr) com HarfBuzz para juntar as
+   letras do árabe/urdu e reordenar as vogais do hindi/bengali, e fontes Noto/WenQuanYi
+   como reserva por alfabeto.
+6. **Relógio** ajustável no menu (ano/mês/dia/hora/minuto + aplicar).
+7. **5 temas** (os protótipos de `variants/media-player/layout`) como dados; nenhuma cor
+   fixa no código da UI.
+
+**O que testar com a imagem nova (v0.3):**
+
+- **power** curto (apaga/acende) e 3 s (diálogo de desligar, foco começa em Cancelar);
+- **menu do SELECT**: brilho (piso de 10%), Wi-Fi, Bluetooth, Som, Idioma, Relógio,
+  Tema, Apagar a tela, Desligar, Reiniciar;
+- **equalizador** audível (mudar o preset Graves/Voz deve ser óbvio) e sem distorção;
+- **idiomas** exóticos de verdade na tela: árabe e urdu ligados, hindi e bengali com as
+  vogais no lugar, chinês sem quadradinho (é o que só a tela pode confirmar);
+- **relógio** aplicando (desligar o aparelho, esperar e ver se o horário ficou);
+- **5 temas** trocando na hora;
+- **biblioteca**: escolher álbum, tocar faixa, B voltar para a lista de álbuns;
+- **modos**: repetir faixa e aleatório no fim de uma música;
+- no X35H, Wi-Fi/BT devem aparecer como **"Ausente"** (o SDIO do rádio não responde
+  lá) — isso não é bug do app.
 
 ### Variante `media-player`: primeiro teste no aparelho (2026-11-01)
 

@@ -26,6 +26,8 @@ struct AudioOut {
     char device[64];
     uint64_t frames_escritos;
     uint64_t frames_zerados; /* quando não há áudio, o tempo anda pelo mixer */
+    int16_t *dsp_buf;        /* cópia de trabalho para o EQ (não mexe no decoder) */
+    int dsp_cap;             /* capacidade de dsp_buf em amostras */
     pthread_mutex_t lock;
 };
 
@@ -120,6 +122,7 @@ AudioOut *audio_open(const char *device, int rate, int channels)
             snd_mixer_close(mixer);
         }
     }
+    dsp_init(a->rate, a->channels);
     wm_log("audio: %s aberto a %d Hz, %d canais", a->device, a->rate, a->channels);
     return a;
 }
@@ -133,6 +136,7 @@ void audio_close(AudioOut *a)
         snd_pcm_drain(a->pcm);
         snd_pcm_close(a->pcm);
     }
+    free(a->dsp_buf);
     pthread_mutex_destroy(&a->lock);
     free(a);
 }
@@ -152,6 +156,23 @@ int audio_write(AudioOut *a, const int16_t *dados, int frames)
         pthread_mutex_lock(&a->lock);
     }
     pthread_mutex_unlock(&a->lock);
+
+    /* O equalizador trabalha numa cópia: o buffer do decodificador pode estar
+     * sendo lido por outra thread (o quadro de vídeo, por exemplo) e não é
+     * nosso para alterar. */
+    if (a->dsp_cap < frames) {
+        int16_t *novo_buf = realloc(a->dsp_buf, (size_t) frames * (size_t) a->channels
+                                                 * sizeof(int16_t));
+        if (novo_buf) {
+            a->dsp_buf = novo_buf;
+            a->dsp_cap = frames;
+        }
+    }
+    if (a->dsp_buf && a->dsp_cap >= frames) {
+        memcpy(a->dsp_buf, dados, (size_t) frames * (size_t) a->channels * sizeof(int16_t));
+        dsp_processar(a->dsp_buf, frames);
+        dados = a->dsp_buf;
+    }
 
     while (feito < frames) {
         snd_pcm_sframes_t escritos = snd_pcm_writei(

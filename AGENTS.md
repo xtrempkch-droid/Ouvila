@@ -1121,3 +1121,78 @@ outro commit resolve sem force-push na branch. Para conferir se o build nasceu, 
   3. vídeo em tela cheia e o ±30 s do L1/R1 (só o decodificador offline foi testado);
   4. se aparecer silêncio entre faixas, o próximo passo é um leitor "gapless" (hoje cada
      fim de faixa recria o pipeline do FFmpeg).
+
+### 2026-11-01 — Copilot (variante `media-player` v0.3: menu, biblioteca, i18n, temas, EQ)
+
+- **Pedido do usuário** (depois do primeiro teste no aparelho, X35H): tirar a aba Rádio
+  (não há AM/FM), levar Wi-Fi/BT para o menu, equalizador completo + melhoria de som por
+  NPU (botão desativado se não houver), aba Biblioteca navegável por álbum, repetir
+  faixa/álbum/aleatório, 10 idiomas, acertar o relógio, 5 temas.
+- **Fez:** cinco módulos novos em `variants/media-player/src/`:
+  - `i18n.c` — tabelas dos 10 idiomas indexadas por `MSG_*` (`designated initializers`;
+    o que faltar cai no pt-BR, nunca em ponteiro nulo), `wm_lang*`, `wm_utf8_encode`,
+    `wm_utf8_copy`;
+  - `tema.c` — os 5 temas dos protótipos como dados (`Tema`), então **nenhuma cor fica
+    fixa na UI**: `ui.c` trocou as constantes `COR_*` por macros que leem `tema_atual()`;
+  - `dsp.c` — equalizador de 10 bandas (filtros *peaking* RBJ em cascata), 8 presets,
+    pré-amplificador e limitador suave; entra em `audio_write()` numa **cópia** do buffer
+    (o buffer do decodificador não é nosso para alterar);
+  - `font.c` reescrito com **HarfBuzz** e faces de reserva por alfabeto;
+  - `radio.c` ganhou a lista de dispositivos Bluetooth (`bluetoothctl devices`) e
+    `radio_bt_visivel()`.
+- **UI:** abas passaram a ser **Música / Vídeos / Biblioteca / Sistema** (Rádio saiu); o
+  menu do SELECT virou **raiz + submenus** (Wi-Fi, Bluetooth, Som → Equalizador, Idioma,
+  Relógio, Tema); o quinto botão dos controles gira o **modo de reprodução**; a
+  Biblioteca agrupa as músicas por álbum (ordenação por inserção sobre `musicas[]`, cada
+  álbum é um trecho contíguo). Estado novo em `/boot/walkmam-media.conf`
+  (`idioma`, `tema`, `modo`, `eq0..eq9`, `eq_preset`, `preamp`, `neural`) — arquivo
+  separado do `walkmam.conf`, que continua sendo editado à mão no cartão.
+- **Armadilhas encontradas nesta sessão (algumas custaram tempo de verdade):**
+  1. **HarfBuzz não é opcional** para 3 dos 10 idiomas: sem ele o árabe sai com as letras
+     soltas e o hindi/bengali com as vogais fora de lugar. O FreeType só rasteriza um
+     índice de glifo; quem escolhe o índice é o HarfBuzz. Prova objetiva usada no teste:
+     "مرحبا" mede **46 px ligada** contra **84 px** com as mesmas letras separadas por
+     espaço (se o shaping não estivesse ativo, as duas medidas seriam iguais).
+  2. **FreeType não faz fallback de fonte.** A DejaVu não tem árabe/devanágari/bengali/
+     chinês, então cada `Font` carrega até 5 faces e o texto é **fatiado por alfabeto**
+     (`fatiar()` em `font.c`); sem isso o chinês sai como `?`. Medido: "曲库" mede 24 px
+     (dois `?`) sem reserva e **40 px** (dois glifos full-width) com a WenQuanYi.
+  3. **`libharfbuzz-dev` sozinho não linka.** Como todo pacote Debian, `.so` é symlink e
+     o alvo está em `libharfbuzz0b`: o erro é `cannot find -lharfbuzz` mesmo com o `-dev`
+     instalado. Já estava documentado para o FFmpeg; vale para o HarfBuzz também (o
+     `media-player-sysroot.sh` já baixa os dois e confere cada `-l`).
+  4. **Misturar bibliotecas do host com o sysroot quebra em tempo de execução**, não de
+     compilação: o `libavcodec` do sysroot puxa `libcairo` → `libpango` **do host**, que
+     exige `hb_ot_color_has_paint` (HarfBuzz ≥ 7) e o nosso binário carrega o HarfBuzz 6
+     do sysroot → `symbol lookup error` ao rodar `--version`. Não é bug do app: na imagem
+     toda a cadeia é bookworm e consistente. Para testar na máquina local, aponte
+     `LD_LIBRARY_PATH` para um HarfBuzz **da mesma versão do host** (o teste que passou
+     usou um symlink para o `libharfbuzz.so.0` do sistema).
+  5. **`char botoes[4][64]` + um quinto botão** = `*** buffer overflow detected ***` do
+     `_FORTIFY_SOURCE`, e o backtrace aponta para `ui_render` (não para o `snprintf` que
+     estourou). Ao acrescentar botão, conferir o tamanho do array.
+  6. **Estado de "tela cheia" preso:** `ui_handle_key` testava `video_tela_cheia` sem
+     olhar a aba, então depois de abrir um vídeo e trocar de aba com L/R **nenhuma tecla**
+     da nova aba funcionava. Agora a checagem é `video_tela_cheia && aba == ABA_VIDEOS`.
+  7. **O teclado na tela tem de vir ANTES do menu** no tratamento de teclas: ele é aberto
+     de dentro do submenu de Wi-Fi, e com o menu na frente as teclas nunca chegavam nele.
+  8. **`fonts-noto-core` e `fonts-wqy-zenhei`**: os caminhos foram conferidos **dentro dos
+     `.deb` reais** (`dpkg-deb -c`), não por memória —
+     `/usr/share/fonts/truetype/noto/NotoSans{Arabic,Devanagari,Bengali}-Regular.ttf` e
+     `/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc`. O passo do rootfs confere os quatro
+     e falha com o nome do arquivo que falta.
+- **Validado offline (e como):**
+  - `build/media-player.sh` **cross arm64** contra o `media-player-sysroot.sh` do
+    bookworm: **zero warnings** e glibc exigida ≤ 2.34; binário de 288 KB;
+  - `tools/test-media-player.sh`: **todos os grupos verdes** — 4 abas + menu desenham,
+    **10 idiomas** e **5 temas** produzem telas distintas (grupo 3b novo), **43 casos** de
+    selftest (o script agora exige 40+), decodificador entrega quadro, launcher propaga
+    falha;
+  - `--native` local só não linkou por causa do item 4 acima (mistura de sysroot com
+    host) — na máquina do CI as dependências vêm todas do apt e são consistentes;
+  - YAML do workflow parseado (`yaml.safe_load`) e `bash -n` no
+    `tools/test-media-player.sh`.
+- **Pendente / próximo (precisa da imagem no aparelho):** árabe/hindi/chinês na tela de
+  verdade, equalizador audível, Wi-Fi/BT pelo menu na X55 (na X35H devem aparecer como
+  "Ausente"), relógio aplicando (`clock_settime` precisa de root — o app roda como root,
+  mas sem `CAP_SYS_TIME` falha e o log registra), 5 temas e navegação por álbum.

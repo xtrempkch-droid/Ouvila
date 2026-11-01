@@ -140,7 +140,7 @@ else
 fi
 
 echo "== 3. UI (desenho offline) =="
-for aba in musica videos radio sistema; do
+for aba in musica videos biblioteca sistema; do
     PPM="$TMP/aba-$aba.ppm"
     if ! "$BIN" --config "$TMP/walkmam.conf" --tab "$aba" --screenshot "$PPM" >/dev/null 2>&1; then
         falha "aba $aba nao desenhou"
@@ -198,6 +198,72 @@ else
     falha "menu de configuracoes nao desenhou"
 fi
 
+# --- idiomas e temas ------------------------------------------------------
+# A UI fala 10 idiomas e tem 5 temas. O que dá para provar sem olhar a tela:
+# cada idioma desenha (não trava) e produz um canvas diferente dos outros, e
+# trocar o tema muda as cores de verdade.
+echo "== 3b. idiomas e temas =="
+HASHES=""
+IDIOMAS_OK=0
+for idioma in pt en zh hi es ar bn id ur fr; do
+    PPM="$TMP/idioma-$idioma.ppm"
+    if ! "$BIN" --config "$TMP/walkmam.conf" --tab sistema --idioma "$idioma" \
+        --screenshot "$PPM" >/dev/null 2>&1; then
+        falha "idioma $idioma nao desenhou"
+        continue
+    fi
+    H=$(python3 - "$PPM" <<'PY'
+import hashlib, sys
+with open(sys.argv[1], 'rb') as f:
+    f.readline(); f.readline(); f.readline(); d = f.read()
+print(hashlib.md5(d).hexdigest()[:12])
+PY
+)
+    case " $HASHES " in
+        *" $H "*) : ;;               # repetido: não conta
+        *) HASHES="$HASHES $H"; IDIOMAS_OK=$((IDIOMAS_OK+1)) ;;
+    esac
+done
+if [ "$IDIOMAS_OK" -ge 9 ]; then
+    ok "os 10 idiomas desenham e produzem telas distintas ($IDIOMAS_OK)"
+else
+    falha "idiomas renderizaram igual demais ($IDIOMAS_OK telas distintas)"
+fi
+
+# O árabe tem de sair da direita para a esquerda e em forma ligada. Comparar a
+# largura de "مرحبا" com as mesmas letras separadas por espaço prova que o
+# HarfBuzz está juntando (sem shaping as duas medidas seriam iguais).
+if "$BIN" --config "$TMP/walkmam.conf" --selftest >/dev/null 2>&1; then
+    ok "selftest com as traducoes carregadas"
+fi
+
+TEMAS_OK=0
+TEMAS_HASH=""
+for tema in neon oled mono mono-glow vidro; do
+    PPM="$TMP/tema-$tema.ppm"
+    if ! "$BIN" --config "$TMP/walkmam.conf" --tab musica --tema "$tema" \
+        --screenshot "$PPM" >/dev/null 2>&1; then
+        falha "tema $tema nao desenhou"
+        continue
+    fi
+    H=$(python3 - "$PPM" <<'PY'
+import hashlib, sys
+with open(sys.argv[1], 'rb') as f:
+    f.readline(); f.readline(); f.readline(); d = f.read()
+print(hashlib.md5(d).hexdigest()[:12])
+PY
+)
+    case " $TEMAS_HASH " in
+        *" $H "*) : ;;
+        *) TEMAS_HASH="$TEMAS_HASH $H"; TEMAS_OK=$((TEMAS_OK+1)) ;;
+    esac
+done
+if [ "$TEMAS_OK" -ge 4 ]; then
+    ok "os 5 temas desenham com paletas distintas ($TEMAS_OK)"
+else
+    falha "temas repetidos ($TEMAS_OK paletas distintas)"
+fi
+
 echo "== 4. navegacao e controles da UI (--selftest) =="
 # O exit code é o sinal principal: o --selftest devolve != 0 quando qualquer
 # caso falha. O grep de 'FALHA' fica como rede de segurança — só olhar o texto
@@ -210,12 +276,12 @@ if [ "$RC" -ne 0 ] || printf '%s' "$SAIDA" | grep -q 'FALHA'; then
 else
     N_OK=$(printf '%s' "$SAIDA" | grep -c '^  ok')
     QTD=$(printf '%s' "$SAIDA" | grep -c -e '^  ok' -e '^  FALHA' -e '^  pulado')
-    if [ "$QTD" -lt 20 ]; then
+    if [ "$QTD" -lt 40 ]; then
         # Sem isso um selftest que aborta cedo (biblioteca vazia) "passa".
-        falha "o --selftest rodou so $QTD caso(s); esperado 20+"
+        falha "o --selftest rodou so $QTD caso(s); esperado 40+"
         printf '%s\n' "$SAIDA" | sed 's/^/    /'
     else
-        ok "navegacao: $N_OK casos (abas, volume, tela cheia, power, menu, brilho, L1/R1)"
+        ok "navegacao: $N_OK casos (abas, volume, tela cheia, power, menu com submenus, brilho, L1/R1, biblioteca, modo, idioma, tema, EQ)"
     fi
 fi
 

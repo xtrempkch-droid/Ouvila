@@ -39,12 +39,203 @@
 #include <time.h>
 
 #ifndef WM_VERSION
-#define WM_VERSION "1.0.0"
+#define WM_VERSION "1.1.0"
 #endif
 
 /* --------------------------------------------------------------- util --- */
 
 #define WM_PATH_MAX 512
+
+/* -------------------------------------------------------------- idiomas --- */
+
+/* 10 idiomas na UI. O padrão é pt-BR; a escolha é gravada no arquivo de ajustes
+ * (/boot/walkmam-media.conf) para sobreviver a um reboot. */
+enum {
+    WM_LANG_PT = 0,
+    WM_LANG_EN,
+    WM_LANG_ZH,
+    WM_LANG_HI,
+    WM_LANG_ES,
+    WM_LANG_AR,
+    WM_LANG_BN,
+    WM_LANG_ID,
+    WM_LANG_UR,
+    WM_LANG_FR,
+    WM_LANG_TOTAL
+};
+
+int wm_lang(void);
+void wm_lang_set(int id);
+/* Código curto ("pt", "en", ...) usado no arquivo de ajustes. */
+const char *wm_lang_code(int id);
+int wm_lang_from_code(const char *code);
+/* Nome no próprio idioma (Português (Brasil), English, 中文...). */
+const char *wm_lang_nome(int id);
+/* Árabe e urdu são escritos da direita para a esquerda. */
+bool wm_lang_rtl(void);
+
+/* Textos da UI. */
+enum {
+    MSG_OK = 0,
+    MSG_SIM,
+    MSG_NAO,
+    MSG_CANCELAR,
+    MSG_VOLTAR,
+    MSG_FECHAR,
+    MSG_AJUDA,
+    MSG_TOCAR,
+    MSG_PAUSAR,
+    MSG_PARAR,
+    MSG_ANTERIOR,
+    MSG_PROXIMO,
+    MSG_VOLUME,
+    MSG_ACAO,
+    MSG_CONFIRMA,
+    MSG_ATIVADO,
+    MSG_DESATIVADO,
+    MSG_LIGADO,
+    MSG_DESLIGADO,
+    MSG_SIM_ATIVO,
+    MSG_NAO_ATIVO,
+    MSG_EM_USO,
+    MSG_CONECTADO,
+    MSG_DESCONECTADO,
+    MSG_INDISPONIVEL,
+    MSG_PRESENTE,
+    MSG_AUSENTE,
+    MSG_PROCURANDO,
+    MSG_CARREGANDO,
+    MSG_NENHUM,
+
+    MSG_ABA_MUSICA,
+    MSG_ABA_VIDEOS,
+    MSG_ABA_BIBLIOTECA,
+    MSG_ABA_SISTEMA,
+
+    MSG_TOCANDO_AGORA,
+    MSG_NADA_TOCANDO,
+    MSG_ALBUM,
+    MSG_ARTISTA,
+    MSG_DESCONHECIDO,
+    MSG_TODAS_MUSICAS,
+    MSG_SEM_ALBUM,
+    MSG_FAIXAS,
+    MSG_ALBUNS,
+    MSG_SEM_MUSICA,
+    MSG_SEM_VIDEO,
+    MSG_VARRENDO,
+    MSG_ABRIR_ALBUM,
+    MSG_MODO_SEQUENCIAL,
+    MSG_MODO_REPETIR_TUDO,
+    MSG_MODO_REPETIR_FAIXA,
+    MSG_MODO_ALEATORIA,
+    MSG_MODO,
+
+    MSG_MENU,
+    MSG_BRILHO,
+    MSG_WIFI,
+    MSG_BLUETOOTH,
+    MSG_SOM,
+    MSG_IDIOMA,
+    MSG_RELOGIO,
+    MSG_TEMA,
+    MSG_APAGAR_TELA,
+    MSG_DESLIGAR,
+    MSG_REINICIAR,
+    MSG_FECHAR_MENU,
+    MSG_CONFIRMA_DESLIGAR,
+    MSG_CONFIRMA_REINICIAR,
+    MSG_SUBMENU_VOLTAR,
+
+    MSG_INFO_SISTEMA,
+    MSG_MODELO,
+    MSG_BATERIA,
+    MSG_CARREGANDO_BAT,
+    MSG_ARMAZENAMENTO,
+    MSG_LIVRE,
+    MSG_TEMPO_LIGADO,
+    MSG_ENDERECO,
+
+    MSG_WIFI_REDES,
+    MSG_WIFI_PROCURAR,
+    MSG_WIFI_DESCONECTAR,
+    MSG_WIFI_SENHA,
+    MSG_WIFI_DIGITE_SENHA,
+    MSG_WIFI_CONECTANDO,
+    MSG_WIFI_NENHUMA,
+    MSG_WIFI_SEM_RADIO,
+    MSG_WIFI_ABERTA,
+
+    MSG_BT_DISPOSITIVOS,
+    MSG_BT_PROCURAR,
+    MSG_BT_LIGAR,
+    MSG_BT_DESLIGAR,
+    MSG_BT_NENHUM,
+    MSG_BT_VISIVEL,
+    MSG_BT_SEM_RADIO,
+
+    MSG_SOM_EQUALIZADOR,
+    MSG_SOM_PRESET,
+    MSG_SOM_PREAMP,
+    MSG_SOM_MELHORIA,
+    MSG_SOM_NEURAL,
+    MSG_SOM_RESTAURAR,
+    MSG_SOM_NPU_AUSENTE,
+    MSG_SOM_NEURAL_NOTA,
+    MSG_PRESET_PLANO,
+    MSG_PRESET_ROCK,
+    MSG_PRESET_POP,
+    MSG_PRESET_JAZZ,
+    MSG_PRESET_CLASSICO,
+    MSG_PRESET_VOZ,
+    MSG_PRESET_GRAVES,
+    MSG_PRESET_ELETRONICO,
+    MSG_PRESET_PERSONALIZADO,
+
+    MSG_RELOGIO_DATA,
+    MSG_RELOGIO_HORA,
+    MSG_RELOGIO_ANO,
+    MSG_RELOGIO_MES,
+    MSG_RELOGIO_DIA,
+    MSG_RELOGIO_MINUTO,
+    MSG_RELOGIO_APLICAR,
+    MSG_RELOGIO_AJUSTAR,
+
+    MSG_TEMA_NEON,
+    MSG_TEMA_OLED,
+    MSG_TEMA_MONO,
+    MSG_TEMA_MONO_GLOW,
+    MSG_TEMA_VIDRO,
+
+    MSG_AJUDA_ABAS,
+    MSG_AJUDA_MUSICA,
+    MSG_AJUDA_VIDEO,
+    MSG_AJUDA_BIBLIOTECA,
+    MSG_AJUDA_SISTEMA,
+    MSG_AJUDA_MENU,
+    MSG_AJUDA_TECLADO,
+    MSG_DESLIGANDO,
+    MSG_REINICIANDO,
+    MSG_TELA_APAGADA,
+    MSG_SEM_AUDIO,
+    MSG_ERRO_ABRIR,
+    MSG_FALHA,
+    MSG_SAIR,
+    MSG_DE,
+    MSG_BANDA,
+    MSG_HZ,
+    MSG_DB,
+    MSG_REDE,
+    MSG_SSID,
+    MSG_MAC,
+    MSG_IP,
+    MSG_TOTAL
+};
+
+/* Texto traduzido (cai no português quando falta tradução). */
+const char *wm_str(int id);
+/* Açúcar: T(MSG_OK). */
+#define T(id) wm_str(id)
 
 typedef struct {
     char conf_path[WM_PATH_MAX];
@@ -74,8 +265,34 @@ void wm_fmt_bytes(double bytes, char *out, size_t size);
 void wm_mkdir_p(const char *path);
 bool wm_read_file(const char *path, char *out, size_t size);
 int wm_utf8_decode(const char *s, uint32_t *cp);
+int wm_utf8_encode(uint32_t cp, char *out);
 void wm_trim(char *s);
 int wm_casecmp(const char *a, const char *b);
+/* Copia texto respeitando bytes UTF-8 inteiros (não corta no meio de um
+ * caractere, o que produziria um glifo inválido). */
+size_t wm_utf8_copy(char *dst, size_t size, const char *src, size_t max_bytes);
+
+/* ------------------------------------------------------------- ajustes --- */
+
+/* Arquivo de ajustes que o próprio app escreve (/boot/walkmam-media.conf, com
+ * queda para /storage/.config). Separado do walkmam.conf de propósito: aquele é
+ * editado à mão no cartão e não deve ser reescrito pelo app. */
+const char *wm_settings_path(void);
+bool wm_settings_load(void);
+const char *wm_settings_get(const char *chave, const char *padrao);
+int wm_settings_get_int(const char *chave, int padrao);
+void wm_settings_set(const char *chave, const char *valor);
+void wm_settings_set_int(const char *chave, int valor);
+/* Grava o arquivo (chamado depois de mudanças; barato, são poucas linhas). */
+bool wm_settings_save(void);
+
+/* Relógio do sistema (roda como root: precisa de CAP_SYS_TIME). */
+bool wm_clock_set(const struct tm *novo);
+/* "Presente" do NPU: o driver de fornecedor expõe /dev/rknpu; o mainline não
+ * tem esse driver, então o modo neural fica indisponível (e o item do menu
+ * aparece desativado, como o usuário pediu). */
+bool wm_npu_presente(void);
+const char *wm_npu_nome(void);
 
 /* ---------------------------------------------------------------- gfx --- */
 
@@ -123,6 +340,43 @@ void gfx_blit_round(Canvas *c, Rect r, int raio, const uint32_t *src,
                     int src_w, int src_h);
 void gfx_shadow_bottom(Canvas *c, Rect r, int altura, uint8_t alfa_max);
 
+/* --------------------------------------------------------------- temas --- */
+
+/* Os cinco temas saíram dos protótipos em variants/media-player/layout.
+ * O layout 4 é o 3 com foco "brilhante"; o 5 é o estilo vidro (iOS). */
+enum {
+    WM_TEMA_NEON = 0,
+    WM_TEMA_OLED,
+    WM_TEMA_MONO,
+    WM_TEMA_MONO_GLOW,
+    WM_TEMA_VIDRO,
+    WM_TEMA_TOTAL
+};
+
+typedef struct {
+    const char *codigo;    /* "neon" (arquivo de ajustes) */
+    int msg_nome;          /* MSG_TEMA_* */
+    Color fundo;
+    Color fundo2;
+    Color painel;
+    Color painel2;
+    Color borda;
+    Color acento;
+    Color acento_esc;
+    Color texto;
+    Color muted;
+    Color barra;
+    uint8_t veu;           /* opacidade do véu atrás dos modais */
+    bool brilho_foco;      /* realce forte no item focado (layout 4) */
+} Tema;
+
+int tema_atual_id(void);
+void tema_set(int id);
+const Tema *tema_atual(void);
+int tema_por_codigo(const char *codigo);
+const char *tema_codigo(int id);
+int tema_msg_nome(int id);
+
 /* --------------------------------------------------------------- font --- */
 
 typedef struct Font Font;
@@ -130,6 +384,10 @@ typedef struct Font Font;
 /* Abre um TTF. Devolve NULL se o arquivo não existir (a UI cai num desenho
  * substituto em vez de morrer). */
 Font *font_open(const char *path, int tamanho_px);
+/* Acrescenta uma face de reserva (Noto árabe/devanágari/bengali, WenQuanYi para
+ * chinês). Cada trecho do texto é desenhado com a primeira face que cobre
+ * aquele alfabeto; sem reserva o alfabeto sai como "?". */
+void font_add_fallback(Font *f, const char *path);
 void font_close(Font *f);
 int font_line_height(const Font *f);
 int font_ascent(const Font *f);
@@ -186,6 +444,47 @@ void audio_flush(AudioOut *a);
 double audio_clock(AudioOut *a);
 bool audio_ok(const AudioOut *a);
 void audio_stats(const AudioOut *a, struct AudioStats *out);
+
+/* ----------------------------------------------------------------- dsp --- */
+
+/* Equalizador de 10 bandas em software, no caminho do áudio (dsp.c).
+ * Bandas de oitava: 31, 62, 125, 250, 500, 1k, 2k, 4k, 8k, 16k Hz. */
+#define WM_EQ_BANDAS 10
+
+extern const int wm_eq_freqs[WM_EQ_BANDAS];
+
+enum {
+    WM_PRESET_PLANO = 0,
+    WM_PRESET_ROCK,
+    WM_PRESET_POP,
+    WM_PRESET_JAZZ,
+    WM_PRESET_CLASSICO,
+    WM_PRESET_VOZ,
+    WM_PRESET_GRAVES,
+    WM_PRESET_ELETRONICO,
+    WM_PRESET_PERSONALIZADO,
+    WM_PRESET_TOTAL
+};
+
+/* Taxa/canais do fluxo que vai passar por dsp_processar(); zera tudo. */
+void dsp_init(int rate, int canais);
+void dsp_reset(void);
+/* Ganho de uma banda em dB, -12..+12. Muda o preset para "personalizado". */
+void dsp_set_banda(int banda, float db);
+float dsp_banda(int banda);
+void dsp_set_preamp(float db);
+float dsp_preamp(void);
+void dsp_aplicar_preset(int preset);
+int dsp_preset(void);
+/* MSG_PRESET_* correspondente, para o menu. */
+int dsp_msg_preset(int preset);
+int dsp_preset_total(void);
+/* Processa no lugar: S16 entrelaçado. */
+void dsp_processar(int16_t *dados, int frames);
+/* Modo neural: só pode ser ligado se houver NPU (kernel de fornecedor). */
+bool dsp_neural_disponivel(void);
+bool dsp_neural(void);
+bool dsp_set_neural(bool ligado);
 
 /* ------------------------------------------------------------- decoder --- */
 
@@ -275,6 +574,18 @@ void radio_conectar_wifi(Radio *r, const char *ssid, const char *senha);
 void radio_bt_power(Radio *r, bool ligar);
 void radio_bt_scan(Radio *r);
 void radio_bt_connect(Radio *r, const char *mac);
+/* Faz o controlador ficar visível para pareamento (Discoverable). */
+void radio_bt_visivel(Radio *r, bool ligar);
+
+/* Dispositivos Bluetooth vistos (pareados ou encontrados no scan). */
+struct BtDevice {
+    char mac[20];
+    char nome[64];
+    bool conectado;
+    bool pareado;
+};
+
+int radio_bt_dispositivos(Radio *r, struct BtDevice *out, int max);
 
 /* Piso de brilho do backlight (%). Abaixo disso o painel fica ilegível; para
  * economizar bateria existe o DPMS off ("apagar a tela"). */
@@ -372,6 +683,16 @@ int ui_want_brightness(Ui *u);
 bool ui_wants_toggle(Ui *u);
 /* 1 = anterior, 2 = próximo, 3 = parar, 0 = nada. */
 int ui_want_transport(Ui *u);
+/* Modo de reprodução (o main consulta ao chegar no fim de uma faixa). */
+enum {
+    WM_MODO_SEQUENCIAL = 0,
+    WM_MODO_REPETIR_ALBUM,
+    WM_MODO_REPETIR_FAIXA,
+    WM_MODO_ALEATORIO,
+    WM_MODO_TOTAL
+};
+int ui_modo(const Ui *u);
+void ui_set_modo(Ui *u, int modo);
 void ui_set_radio(Ui *u, Radio *r);
 void ui_set_tab(Ui *u, int aba);
 void ui_set_video_fullscreen(Ui *u, bool ativo);

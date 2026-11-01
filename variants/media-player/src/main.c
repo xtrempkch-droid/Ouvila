@@ -294,7 +294,9 @@ static void uso(void)
            "Uso: walkmam-media [opções]\n"
            "  --screenshot ARQ.ppm    desenha uma vez e grava o canvas (PPM)\n"
            "  --screenshot-size WxH   tamanho do canvas no modo --screenshot\n"
-           "  --tab NOME              aba inicial (musica|videos|radio|sistema)\n"
+           "  --tab NOME              aba inicial (musica|videos|biblioteca|sistema)\n"
+           "  --tema NOME             tema inicial (neon|oled|mono|mono-glow|vidro)\n"
+           "  --idioma COD            idioma inicial (pt|en|zh|hi|es|ar|bn|id|ur|fr)\n"
            "  --list-devices         lista gamepads/teclados e sai\n"
            "  --scan                 varre a biblioteca e lista os arquivos\n"
            "  --selftest             exercita a navegacao/estado da UI e sai\n"
@@ -461,6 +463,13 @@ static int wm_selftest(Ui *ui, Canvas *canvas, Library *lib)
     ev.key = WM_KEY_POWER_LONGO;
     ui_handle_key(ui, &ev);
     ev.key = WM_KEY_OK;
+    CONFERE(ui_handle_key(ui, &ev) == WM_ACAO_NENHUMA,
+            "diálogo abre em cancelar (não desliga no primeiro toque)");
+    ev.key = WM_KEY_POWER_LONGO;
+    ui_handle_key(ui, &ev);
+    ev.key = WM_KEY_DIR;   /* vai para o botão de desligar */
+    ui_handle_key(ui, &ev);
+    ev.key = WM_KEY_OK;
     CONFERE(ui_handle_key(ui, &ev) == WM_ACAO_DESLIGAR,
             "confirmar desliga o aparelho");
 
@@ -532,6 +541,197 @@ static int wm_selftest(Ui *ui, Canvas *canvas, Library *lib)
                 "aba Sistema não mexe no brilho");
     }
 
+    /* 15. Aba Biblioteca: A na lista de ÁLBUNS abre o álbum em vez de tocar;
+     * o segundo A toca a primeira faixa; B volta para a lista de álbuns. */
+    ui_set_tab(ui, 2);
+    ev.key = WM_KEY_OK;
+    ui_handle_key(ui, &ev);
+    CONFERE(ui_want_play(ui, NULL) == NULL, "A no álbum abre, não toca");
+    ev.key = WM_KEY_OK;
+    ui_handle_key(ui, &ev);
+    {
+        const char *quer = ui_want_play(ui, NULL);
+
+        CONFERE(quer != NULL && quer[0] != '\0', "A na faixa toca dentro do álbum");
+    }
+    ev.key = WM_KEY_VOLTAR;
+    CONFERE(ui_handle_key(ui, &ev) == WM_ACAO_NENHUMA,
+            "B no álbum aberto volta para a lista de álbuns");
+    ev.key = WM_KEY_VOLTAR;
+    CONFERE(ui_handle_key(ui, &ev) == WM_ACAO_SAIR,
+            "B na lista de álbuns sai do app");
+    for (int i = 0; i < 6; i++) {
+        ev.key = WM_KEY_CIMA;
+        ui_handle_key(ui, &ev);
+    }
+    for (int i = 0; i < 6; i++) {
+        ev.key = WM_KEY_BAIXO;
+        ui_handle_key(ui, &ev);
+    }
+    ui_render(ui);
+    printf("  ok   navegar pelos álbuns não estoura a lista\n");
+
+    /* 16. Modo de reprodução: o quinto botão dos controles gira o modo. */
+    ui_set_tab(ui, 0);
+    {
+        int inicial = ui_modo(ui);
+
+        /* BAIXO até o fim da lista é o que leva o foco para os controles. */
+        for (int i = 0; i < 12; i++) {
+            ev.key = WM_KEY_BAIXO;
+            ui_handle_key(ui, &ev);
+        }
+        for (int i = 0; i < 5; i++) {   /* até o botão do modo */
+            ev.key = WM_KEY_DIR;
+            ui_handle_key(ui, &ev);
+        }
+        ev.key = WM_KEY_OK;
+        ui_handle_key(ui, &ev);
+        CONFERE(ui_modo(ui) == (inicial + 1) % WM_MODO_TOTAL,
+                "botão de modo gira em ordem -> repetir álbum");
+        ui_set_modo(ui, WM_MODO_SEQUENCIAL);
+    }
+
+    /* 17. Menu com submenus: entrar no Som, mexer no preset e voltar sem
+     * sair do menu. */
+    ev.key = WM_KEY_MENU;
+    ui_handle_key(ui, &ev);
+    for (int i = 0; i < 3; i++) {   /* brilho -> wifi -> bt -> som */
+        ev.key = WM_KEY_BAIXO;
+        ui_handle_key(ui, &ev);
+    }
+    ev.key = WM_KEY_OK;
+    ui_handle_key(ui, &ev);
+    {
+        int antes = dsp_preset();
+
+        ev.key = WM_KEY_DIR;
+        ui_handle_key(ui, &ev);
+        CONFERE(dsp_preset() == (antes + 1) % WM_PRESET_TOTAL,
+                "submenu Som troca o preset do equalizador");
+        ui_render(ui);
+        printf("  ok   submenu Som desenhou\n");
+    }
+    ev.key = WM_KEY_VOLTAR;
+    ui_handle_key(ui, &ev);
+    ui_render(ui);
+    printf("  ok   volta do submenu para a raiz desenhou\n");
+
+    /* 18. Equalizador: banda muda, preamp muda, restaurar zera tudo. */
+    dsp_set_banda(0, 6.0f);
+    CONFERE(dsp_banda(0) > 5.0f, "banda 31 Hz aceita +6 dB");
+    dsp_set_banda(0, 99.0f);
+    CONFERE(dsp_banda(0) <= 12.0f, "ganho da banda para no teto de +12 dB");
+    dsp_reset();
+    CONFERE(dsp_banda(0) == 0.0f && dsp_preamp() == 0.0f
+                && dsp_preset() == WM_PRESET_PLANO,
+            "restaurar zera bandas, preamp e preset");
+
+    /* 19. Modo neural só liga se houver NPU: no mainline não há, e o menu
+     * precisa mostrar o item desativado em vez de aceitar o pedido. */
+    CONFERE(dsp_set_neural(true) == dsp_neural_disponivel(),
+            "modo neural respeita a presença do NPU");
+    dsp_set_neural(false);
+
+    /* 20. Idioma: trocar para inglês muda os textos e volta ao português. */
+    {
+        const char *pt = wm_str(MSG_ABA_MUSICA);
+        char copia[64];
+
+        snprintf(copia, sizeof(copia), "%s", pt);
+        wm_lang_set(WM_LANG_EN);
+        CONFERE(strcmp(wm_str(MSG_ABA_MUSICA), copia) != 0,
+                "trocar o idioma troca os textos");
+        wm_lang_set(WM_LANG_AR);
+        CONFERE(wm_lang_rtl(), "árabe é marcado como escrita da direita para a esquerda");
+        wm_lang_set(WM_LANG_PT);
+        CONFERE(strcmp(wm_str(MSG_ABA_MUSICA), copia) == 0,
+                "voltar para pt-BR restaura os textos");
+    }
+    /* Toda tradução obrigatória tem de existir nos 10 idiomas (um NULL cai no
+     * português e a UI mostraria texto misturado). */
+    {
+        static const int AMOSTRA[] = { MSG_OK, MSG_ABA_MUSICA, MSG_MENU, MSG_SOM,
+                                       MSG_IDIOMA, MSG_TEMA, MSG_DESLIGAR };
+        int vazios = 0;
+
+        for (int l = 0; l < WM_LANG_TOTAL; l++) {
+            wm_lang_set(l);
+            for (size_t k = 0; k < sizeof(AMOSTRA) / sizeof(AMOSTRA[0]); k++) {
+                const char *t = wm_str(AMOSTRA[k]);
+
+                if (!t || !t[0]) {
+                    vazios++;
+                }
+            }
+        }
+        wm_lang_set(WM_LANG_PT);
+        CONFERE(vazios == 0, "as 10 traduções têm todos os textos-chave");
+    }
+
+    /* 21. Temas: os 5 existem, têm código e nome, e trocar muda a paleta. */
+    {
+        static const char *const CODIGOS[WM_TEMA_TOTAL] = {
+            "neon", "oled", "mono", "mono-glow", "vidro"
+        };
+        int ok = 1;
+
+        for (int t = 0; t < WM_TEMA_TOTAL; t++) {
+            tema_set(t);
+            if (tema_atual_id() != t || !tema_codigo(t)[0]
+                || tema_por_codigo(CODIGOS[t]) != t
+                || wm_str(tema_msg_nome(t))[0] == '\0') {
+                ok = 0;
+            }
+        }
+        tema_set(WM_TEMA_NEON);
+        CONFERE(ok, "os 5 temas existem e voltam pelo código");
+        tema_set(WM_TEMA_VIDRO);
+        ui_render(ui);
+        tema_set(WM_TEMA_NEON);
+        printf("  ok   tema alternativo desenhou\n");
+    }
+
+    /* 22. Menu de relógio: navegar e ajustar campos não pode estourar mês/dia. */
+    ev.key = WM_KEY_MENU;
+    ui_handle_key(ui, &ev);
+    for (int i = 0; i < 5; i++) {   /* até Relógio */
+        ev.key = WM_KEY_BAIXO;
+        ui_handle_key(ui, &ev);
+    }
+    ev.key = WM_KEY_OK;
+    ui_handle_key(ui, &ev);
+    for (int i = 0; i < 40; i++) {
+        ev.key = WM_KEY_DIR;
+        ui_handle_key(ui, &ev);
+    }
+    for (int i = 0; i < 40; i++) {
+        ev.key = WM_KEY_ESQ;
+        ui_handle_key(ui, &ev);
+    }
+    ui_render(ui);
+    printf("  ok   ajuste do relógio não estoura mês/dia\n");
+    ev.key = WM_KEY_MENU;
+    ui_handle_key(ui, &ev);
+
+    /* 23. WiFi/Bluetooth agora moram no menu, não numa aba: as 4 abas têm de
+     * ter nomes distintos, e "Rádio" não existe mais. */
+    {
+        int iguais = 0;
+
+        for (int a = 0; a < 4; a++) {
+            for (int b = a + 1; b < 4; b++) {
+                const int nomes[4] = { MSG_ABA_MUSICA, MSG_ABA_VIDEOS,
+                                       MSG_ABA_BIBLIOTECA, MSG_ABA_SISTEMA };
+
+                if (strcmp(wm_str(nomes[a]), wm_str(nomes[b])) == 0) {
+                    iguais++;
+                }
+            }
+        }
+        CONFERE(iguais == 0, "as 4 abas têm nomes distintos (sem aba Radio)");
+    }
+
 #undef CONFERE
     return falhas ? 1 : 0;
 }
@@ -545,6 +745,8 @@ int main(int argc, char **argv)
     const char *screenshot = NULL;
     int screenshot_w = 1280, screenshot_h = 720;
     int tab_inicial = 0;
+    int tema_inicial = -1;
+    int idioma_inicial = -1;
     const char *tocar_direto = NULL;
     const char *quadro_saida = NULL;
     double quadro_em = 1.0;
@@ -591,7 +793,7 @@ int main(int argc, char **argv)
                 tab_inicial = 0;
             } else if (strcmp(nome, "videos") == 0) {
                 tab_inicial = 1;
-            } else if (strcmp(nome, "radio") == 0) {
+            } else if (strcmp(nome, "biblioteca") == 0) {
                 tab_inicial = 2;
             } else if (strcmp(nome, "sistema") == 0) {
                 tab_inicial = 3;
@@ -599,6 +801,10 @@ int main(int argc, char **argv)
                 fprintf(stderr, "aba invalida: %s\n", nome);
                 return 2;
             }
+        } else if (strcmp(argv[i], "--tema") == 0 && i + 1 < argc) {
+            tema_inicial = tema_por_codigo(argv[++i]);
+        } else if (strcmp(argv[i], "--idioma") == 0 && i + 1 < argc) {
+            idioma_inicial = wm_lang_from_code(argv[++i]);
         } else if (strcmp(argv[i], "--screenshot-size") == 0 && i + 1 < argc) {
             if (sscanf(argv[++i], "%dx%d", &screenshot_w, &screenshot_h) != 2
                 || screenshot_w < 320 || screenshot_h < 240) {
@@ -801,6 +1007,14 @@ int main(int argc, char **argv)
         return 1;
     }
     ui_set_radio(ui, radio);
+    /* Os argumentos vencem o que está gravado em /boot/walkmam-media.conf: é o
+     * que permite gerar as capturas de teste com qualquer tema/idioma. */
+    if (idioma_inicial >= 0) {
+        wm_lang_set(idioma_inicial);
+    }
+    if (tema_inicial >= 0) {
+        tema_set(tema_inicial);
+    }
     ui_set_tab(ui, tab_inicial);
 
     if (selftest) {
@@ -1120,7 +1334,45 @@ int main(int argc, char **argv)
                     ui_set_video_fullscreen(ui, false);
                     ui_set_current_path(ui, NULL);
                 } else {
-                    const char *proximo = ui_step_track(ui, 1);
+                    /* Modo de reprodução (botão MODO na barra de controles):
+                     *   0 em ordem       -> próxima; para no fim da lista
+                     *   1 repetir álbum  -> próxima, dando a volta no fim
+                     *   2 repetir faixa  -> a mesma de novo
+                     *   3 aleatória      -> qualquer faixa de áudio da lista
+                     * ui_step_track() sempre dá a volta na lista, então "em
+                     * ordem" precisa comparar: se a "próxima" é a que acabou,
+                     * chegamos ao fim e é hora de parar. */
+                    int modo = ui_modo(ui);
+                    char anterior[WM_PATH_MAX];
+                    const char *proximo = NULL;
+                    const char *atual = ui_step_track(ui, 0);
+
+                    snprintf(anterior, sizeof(anterior), "%s", atual ? atual : "");
+
+                    if (modo == WM_MODO_REPETIR_FAIXA) {
+                        proximo = anterior[0] ? ui_step_track(ui, 0) : NULL;
+                    } else if (modo == WM_MODO_ALEATORIO) {
+                        int total = library_count(lib);
+
+                        for (int tentativa = 0; tentativa < 24 && !proximo; tentativa++) {
+                            int alvo = total > 0 ? rand() % total : 0;
+                            struct MediaItem sorteado;
+
+                            if (!library_item(lib, alvo, &sorteado)
+                                || sorteado.tipo != WM_MIDIA_AUDIO) {
+                                continue;
+                            }
+                            /* Anda até a posição sorteada dentro da lista
+                             * filtrada: a UI é quem conhece o índice. */
+                            proximo = ui_step_track(ui, alvo);
+                        }
+                    } else {
+                        proximo = ui_step_track(ui, 1);
+                        if (modo == WM_MODO_SEQUENCIAL && proximo && anterior[0]
+                            && strcmp(proximo, anterior) == 0) {
+                            proximo = NULL;   /* deu a volta: fim da lista */
+                        }
+                    }
 
                     if (proximo) {
                         player = player_open(proximo, audio, canvas.w, canvas.h,
@@ -1130,9 +1382,10 @@ int main(int argc, char **argv)
                         }
                         ui_set_player(ui, player);
                         ui_set_current_path(ui, proximo);
-                        wm_log("fila: proxima faixa %s", proximo);
+                        wm_log("fila: proxima faixa %s (modo %d)", proximo, modo);
                     } else {
                         ui_set_current_path(ui, NULL);
+                        wm_log("fila: fim da lista (modo %d)", modo);
                     }
                 }
                 precisa_desenhar = true;

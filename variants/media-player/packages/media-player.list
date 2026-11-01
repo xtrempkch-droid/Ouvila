@@ -33,6 +33,16 @@ libpng16-16
 zlib1g
 fonts-dejavu-core
 
+# Shaping (ligaduras e junção de letras) dos alfabetos que a tela de idioma
+# oferece. Sem isto o árabe sai com as letras isoladas e o hindi/bengali com as
+# vogais fora de lugar — FreeType sozinho só posiciona um glifo por caractere.
+libharfbuzz0b
+
+# Fontes por alfabeto: noto-core traz árabe, devanágari (hindi), bengali e
+# latino cirílico/gregos; wqy-zenhei cobre o chinês (o noto-cjk é ~100 MB).
+fonts-noto-core
+fonts-wqy-zenhei
+
 # Rádio e utilitários que os recursos já compartilhados usam.
 wpasupplicant
 iw

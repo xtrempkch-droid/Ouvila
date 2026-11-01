@@ -1,23 +1,28 @@
 /* ui.c — telas, navegação e desenho da UI.
  *
- * Referência visual: variants/media-player/layout/layout1.md (fundo quase
- * preto, painéis "glass", acento vermelho). Tudo é desenhado à mão no canvas,
- * sem toolkit: assim o app continua sendo um binário só.
+ * Visual: os cinco temas de variants/media-player/layout (layout1..5.md). Nada
+ * de cor fixa aqui: tudo sai de tema_atual(), então trocar de tema no menu muda
+ * a tela inteira. Tudo é desenhado à mão no canvas, sem toolkit: assim o app
+ * continua sendo um binário só.
  *
- * Abas:
- *   Música  — capa, título/artista/álbum, progresso, controles e biblioteca
- *   Vídeos  — grade da biblioteca + reprodução em tela cheia (o quadro vem do
- *             decodificador; esta tela é o "video player" da variante)
- *   Rádio   — Wi-Fi/BT: estado do kernel + scan/conectar pelo NetworkManager
- *   Sistema — SÓ informação: modelo, bateria, armazenamento e brilho atual
+ * Abas (4, com L/R para trocar):
+ *   Música     — capa, título/artista/álbum, progresso, controles e a lista
+ *   Vídeos     — grade da biblioteca + reprodução em tela cheia
+ *   Biblioteca — navegação por ÁLBUM: lista de álbuns -> faixas do álbum
+ *   Sistema    — SÓ informação: modelo, bateria, armazenamento, uptime
  *
  * Nada se configura na aba Sistema (o botão de volume do hardware se confundia
- * com o brilho ali). Todo ajuste mora no menu de configurações, aberto com
- * SELECT em qualquer aba: brilho, apagar a tela, desligar, reiniciar, fechar.
+ * com o brilho ali). Todo ajuste mora no menu, aberto com SELECT em qualquer
+ * aba. O menu tem submenus, e é lá que ficam Wi-Fi, Bluetooth, som (equalizador
+ * de 10 bandas), idioma (10), relógio e tema — como o usuário pediu.
  *
  * Entrada: só o gamepad/teclado (não há toque). A navegação é vertical dentro
  * da aba e horizontal entre abas, com as teclas L/R para pular de aba, L1/R1
  * para saltar faixa/página e o botão de power para apagar/acender a tela.
+ *
+ * Todos os textos passam por T(MSG_*), de i18n.c. A fonte primária é DejaVu,
+ * com reservas Noto (árabe, devanágari, bengali) e WenQuanYi (chinês): o
+ * shaping fica no font.c, com HarfBuzz.
  */
 
 #include "wm.h"
@@ -28,9 +33,13 @@
 #include <unistd.h>
 
 #define ITENS_LISTA_MAX 400
+#define ALBUNS_MAX 200
+#define BT_DEV_MAX 16
 #define TELAS 4
 
-enum { ABA_MUSICA = 0, ABA_VIDEOS = 1, ABA_RADIO = 2, ABA_SISTEMA = 3 };
+/* A aba "Rádio" saiu: estes aparelhos não têm AM/FM. Wi-Fi e Bluetooth passaram
+ * para o menu, e o lugar dela na barra virou a Biblioteca. */
+enum { ABA_MUSICA = 0, ABA_VIDEOS = 1, ABA_BIBLIOTECA = 2, ABA_SISTEMA = 3 };
 
 enum {
     FOCO_LISTA = 0,
@@ -44,11 +53,30 @@ enum {
 /* Índice dos itens do menu de configurações. */
 enum {
     MENU_BRILHO = 0,
+    MENU_WIFI,
+    MENU_BT,
+    MENU_SOM,
+    MENU_IDIOMA,
+    MENU_RELOGIO,
+    MENU_TEMA,
     MENU_APAGAR,
     MENU_DESLIGAR,
     MENU_REINICIAR,
     MENU_FECHAR,
     MENU_ITENS
+};
+
+/* Tela atual do menu. RAIZ é a lista de cima; os outros são os submenus. */
+enum {
+    TELA_RAIZ = 0,
+    TELA_WIFI,
+    TELA_BT,
+    TELA_SOM,
+    TELA_EQ,
+    TELA_IDIOMA,
+    TELA_RELOGIO,
+    TELA_TEMA,
+    TELA_TOTAL
 };
 
 struct Ui {
@@ -78,12 +106,30 @@ struct Ui {
 
     struct Rede redes[32];
     int n_redes;
+    struct BtDevice bt_devs[BT_DEV_MAX];
+    int n_bt_devs;
+
+    /* Biblioteca por álbum: u->musicas[] fica ordenado por álbum, então cada
+     * álbum é um trecho contíguo (ini/n) dessa mesma lista. O álbum 0 é
+     * sintético: "Todas as músicas". */
+    int alb_ini[ALBUNS_MAX];
+    int alb_n[ALBUNS_MAX];
+    int alb_lib[ALBUNS_MAX];    /* índice na library do 1º item do álbum */
+    int n_albuns;
+    int bib_album;              /* álbum em foco na aba Biblioteca */
+    int bib_faixa;              /* faixa em foco dentro do álbum aberto */
+    bool bib_aberto;            /* entrou no álbum (mostra as faixas) */
+    int bib_topo;
+    int bib_topo_faixas;
+
+    /* Modo de reprodução (repetir faixa/álbum, aleatório). */
+    int modo;
 
     bool video_tela_cheia;
     bool mostrar_ajuda;
     double osd_ate;
 
-    char botoes[4][64];
+    char botoes[6][64];   /* 5 botões (anterior, play, próximo, parar, modo) */
     int n_botoes;
 
     /* pedidos para o main */
@@ -110,11 +156,19 @@ struct Ui {
      * A aba Sistema ficou só de informação: qualquer ajuste acontece aqui. */
     bool menu_aberto;
     int menu_item;
+    int menu_tela;          /* TELA_* */
+    int menu_curso;         /* cursor dentro do submenu */
+    int menu_top[TELA_TOTAL]; /* cursor de cada submenu, para voltar onde estava */
     bool dialogo_aberto;
     int dialogo_item;
+    bool dialogo_reiniciar; /* o diálogo também serve para reiniciar */
     bool tela_apagada;
     int cursor_tecla;
     char ssid_pendente[64];
+
+    /* Relógio do menu: valores em edição (só valem ao aplicar). */
+    struct tm relogio;
+    int relogio_item;
 
     /* capa decodificada do álbum atual */
     uint32_t *capa;
@@ -156,17 +210,41 @@ static Layout layout_de(const Canvas *c)
 
 /* ---------------------------------------------------------------- cores --- */
 
-static const Color COR_FUNDO = { 7, 9, 14, 255 };
-static const Color COR_FUNDO_2 = { 13, 18, 28, 255 };
-static const Color COR_PAINEL = { 22, 30, 46, 215 };
-static const Color COR_PAINEL_2 = { 29, 39, 57, 235 };
-static const Color COR_BORDA = { 42, 55, 78, 255 };
-static const Color COR_ACENTO = { 244, 63, 94, 255 };
-static const Color COR_ACENTO_ESC = { 225, 29, 72, 255 };
-static const Color COR_TEXTO = { 248, 250, 252, 255 };
-static const Color COR_MUTED = { 148, 163, 184, 255 };
+/* Todas as cores da UI vêm do tema ativo (tema.c). Antes eram constantes aqui e
+ * trocar de tema exigiria recompilar; com macro, cada uso continua igual e o
+ * valor é lido na hora do desenho. */
+#define COR_FUNDO (tema_atual()->fundo)
+#define COR_FUNDO_2 (tema_atual()->fundo2)
+#define COR_PAINEL (tema_atual()->painel)
+#define COR_PAINEL_2 (tema_atual()->painel2)
+#define COR_BORDA (tema_atual()->borda)
+#define COR_ACENTO (tema_atual()->acento)
+#define COR_ACENTO_ESC (tema_atual()->acento_esc)
+#define COR_TEXTO (tema_atual()->texto)
+#define COR_MUTED (tema_atual()->muted)
+#define COR_BARRA (tema_atual()->barra)
+
+/* Verde de "tudo certo" não faz parte da paleta de nenhum tema: é semântico
+ * (Wi-Fi conectado, bateria carregando) e por isso fica fixo. */
 static const Color COR_OK = { 52, 211, 153, 255 };
-static const Color COR_BARRA = { 51, 65, 85, 255 };
+
+/* Acento com transparência — usado nos realces das listas. */
+static Color acento_alfa(int a)
+{
+    Color c = tema_atual()->acento;
+
+    c.a = (uint8_t) a;
+    return c;
+}
+
+/* Texto legível sobre uma cor cheia: os temas claros (mono, vidro) têm acento
+ * branco, e texto branco em botão branco desapareceria. */
+static Color cor_contraste(Color fundo)
+{
+    int lum = (299 * fundo.r + 587 * fundo.g + 114 * fundo.b) / 1000;
+
+    return lum > 150 ? wm_rgb(12, 12, 14) : wm_rgb(250, 250, 252);
+}
 
 /* ------------------------------------------------------------- helpers --- */
 
@@ -268,13 +346,37 @@ static bool carregar_capa(Ui *u, const char *caminho)
 
 /* ----------------------------------------------------------- listas ----- */
 
+/* Monta musicas[]/videos[] e agrupa as músicas por álbum.
+ *
+ * A ordenação é por inserção sobre arrays auxiliares: a lista tem no máximo 400
+ * itens e isso roda uma vez por varredura, então não vale um qsort com
+ * comparador que precisaria chamar library_item() em cada comparação. */
+typedef struct {
+    int lib;
+    char album[96];
+    char titulo[192];
+} ItemAux;
+
+static int cmp_aux(const ItemAux *a, const ItemAux *b)
+{
+    int c = wm_casecmp(a->album, b->album);
+
+    if (c != 0) {
+        return c;
+    }
+    return wm_casecmp(a->titulo, b->titulo);
+}
+
 static void montar_listas(Ui *u)
 {
     int total = library_count(u->lib);
     struct MediaItem item;
+    ItemAux *aux = NULL;
+    int n_aux = 0;
 
     u->n_musicas = 0;
     u->n_videos = 0;
+    u->n_albuns = 0;
     for (int i = 0; i < total; i++) {
         if (!library_item(u->lib, i, &item)) {
             continue;
@@ -285,8 +387,75 @@ static void montar_listas(Ui *u)
             u->videos[u->n_videos++] = i;
         }
     }
+    if (u->n_musicas == 0) {
+        u->bib_album = 0;
+        u->bib_aberto = false;
+        return;
+    }
+
+    aux = calloc((size_t) u->n_musicas, sizeof(*aux));
+    if (!aux) {
+        return;
+    }
+    for (int i = 0; i < u->n_musicas; i++) {
+        if (!library_item(u->lib, u->musicas[i], &item)) {
+            continue;
+        }
+        aux[n_aux].lib = u->musicas[i];
+        snprintf(aux[n_aux].album, sizeof(aux[n_aux].album), "%.95s",
+                 item.album[0] ? item.album : T(MSG_SEM_ALBUM));
+        snprintf(aux[n_aux].titulo, sizeof(aux[n_aux].titulo), "%.191s",
+                 item.titulo[0] ? item.titulo : item.caminho);
+        n_aux++;
+    }
+    /* Ordenação por inserção: O(n²) com n <= 400 = 160 mil comparações de
+     * string no pior caso, e o caso normal (já quase ordenado) é O(n). */
+    for (int i = 1; i < n_aux; i++) {
+        ItemAux chave = aux[i];
+        int j = i - 1;
+
+        while (j >= 0 && cmp_aux(&aux[j], &chave) > 0) {
+            aux[j + 1] = aux[j];
+            j--;
+        }
+        aux[j + 1] = chave;
+    }
+
+    for (int i = 0; i < n_aux; i++) {
+        u->musicas[i] = aux[i].lib;
+    }
+
+    /* Álbum 0 é sintético: "todas as músicas", para tocar tudo em ordem. */
+    u->alb_ini[0] = 0;
+    u->alb_n[0] = n_aux;
+    u->alb_lib[0] = aux[0].lib;
+    u->n_albuns = 1;
+
+    for (int i = 0; i < n_aux && u->n_albuns < ALBUNS_MAX;) {
+        int j = i;
+
+        while (j + 1 < n_aux && strcmp(aux[j + 1].album, aux[i].album) == 0) {
+            j++;
+        }
+        u->alb_ini[u->n_albuns] = i;
+        u->alb_n[u->n_albuns] = j - i + 1;
+        u->alb_lib[u->n_albuns] = aux[i].lib;
+        u->n_albuns++;
+        i = j + 1;
+    }
+    free(aux);
+
+    if (u->bib_album >= u->n_albuns) {
+        u->bib_album = 0;
+        u->bib_aberto = false;
+    }
+    if (u->bib_faixa >= u->alb_n[u->bib_album]) {
+        u->bib_faixa = 0;
+    }
 }
 
+/* Quantos itens o cursor da aba percorre. Na Biblioteca fechada o cursor anda
+ * por ÁLBUNS (não por faixas) — é o que dá a navegação por álbum. */
 static int itens_da_aba(const Ui *u)
 {
     switch (u->aba) {
@@ -294,23 +463,41 @@ static int itens_da_aba(const Ui *u)
         return u->n_musicas;
     case ABA_VIDEOS:
         return u->n_videos;
+    case ABA_BIBLIOTECA:
+        return u->bib_aberto ? u->alb_n[u->bib_album] : u->n_albuns;
     default:
         return 0;
     }
 }
 
-static bool item_da_aba(Ui *u, int posicao, struct MediaItem *out)
+/* Quantas faixas a lista de faixas da aba tem (para anterior/próxima). */
+static int faixas_da_aba(const Ui *u)
+{
+    if (u->aba == ABA_BIBLIOTECA) {
+        return u->bib_aberto ? u->alb_n[u->bib_album] : u->n_musicas;
+    }
+    return itens_da_aba(u);
+}
+
+/* Item de mídia na posição `posicao` da lista de faixas da aba. */
+static bool faixa_da_aba(Ui *u, int posicao, struct MediaItem *out)
 {
     int indice;
 
     if (posicao < 0) {
         return false;
     }
-    if (u->aba == ABA_MUSICA) {
+    if (u->aba == ABA_MUSICA
+        || (u->aba == ABA_BIBLIOTECA && !u->bib_aberto)) {
         if (posicao >= u->n_musicas) {
             return false;
         }
         indice = u->musicas[posicao];
+    } else if (u->aba == ABA_BIBLIOTECA) {
+        if (posicao >= u->alb_n[u->bib_album]) {
+            return false;
+        }
+        indice = u->musicas[u->alb_ini[u->bib_album] + posicao];
     } else if (u->aba == ABA_VIDEOS) {
         if (posicao >= u->n_videos) {
             return false;
@@ -327,7 +514,9 @@ static bool item_da_aba(Ui *u, int posicao, struct MediaItem *out)
 static void desenhar_topo(Ui *u, Layout l)
 {
     Canvas *c = u->canvas;
-    static const char *nomes[TELAS] = { "Música", "Vídeos", "Rádio", "Sistema" };
+    const char *nomes[TELAS] = {
+        T(MSG_ABA_MUSICA), T(MSG_ABA_VIDEOS), T(MSG_ABA_BIBLIOTECA), T(MSG_ABA_SISTEMA)
+    };
     int x = l.margem;
     int y = l.margem / 2 + 4;
     int chip_x;
@@ -373,13 +562,18 @@ static void desenhar_topo(Ui *u, Layout l)
             chip_x -= l.compacto ? 8 : 14;
         }
 
-        chip_x -= largura_texto(u->f_pequeno, "bt off") + 20;
-        chip(c, u->f_pequeno, chip_x, base - 6,
-             u->sys.bt_ligado ? "bt on" : "bt off", COR_OK, u->sys.bt_ligado);
+        {
+            /* "bt"/"wifi" são siglas: não traduzem, mas o estado sim. */
+            const char *rotulo_bt = u->sys.bt_ligado ? "bt" : "bt";
+
+            chip_x -= largura_texto(u->f_pequeno, rotulo_bt) + 20;
+            chip(c, u->f_pequeno, chip_x, base - 6, rotulo_bt, COR_OK,
+                 u->sys.bt_ligado);
+        }
         chip_x -= l.compacto ? 4 : 8;
 
-        chip_x -= largura_texto(u->f_pequeno, "wifi off") + 20;
-        snprintf(buf, sizeof(buf), "%s", u->sys.wifi_conectado ? "wifi" : "wifi off");
+        chip_x -= largura_texto(u->f_pequeno, "wifi") + 20;
+        snprintf(buf, sizeof(buf), "%s", "wifi");
         chip(c, u->f_pequeno, chip_x, base - 6, buf, COR_OK, u->sys.wifi_conectado);
     }
 }
@@ -401,8 +595,8 @@ static void desenhar_rodape(Ui *u, Layout l)
     }
 
     if (l.compacto) {
-        snprintf(buf, sizeof(buf), "A abre  B volta  L/R aba  L1/R1 faixa  Y config");
-        texto(c, u->f_pequeno, l.margem, y + l.rodape_h / 2 + 4, COR_MUTED, buf);
+        texto_limitado(c, u->f_pequeno, l.margem, y + l.rodape_h / 2 + 4, COR_MUTED,
+                       T(MSG_AJUDA_ABAS), c->w / 2 - l.margem);
         snprintf(buf, sizeof(buf), "%s", st.aberto ? st.titulo : "");
         texto_limitado(c, u->f_pequeno, c->w / 2, y + l.rodape_h / 2 + 4, COR_TEXTO,
                        buf, c->w / 2 - l.margem - 40);
@@ -413,7 +607,7 @@ static void desenhar_rodape(Ui *u, Layout l)
     }
 
     texto(c, u->f_pequeno, l.margem, y + l.rodape_h / 2 + 5, COR_MUTED,
-          "A abre · B volta · L/R aba · L1/R1 faixa · X play/pause · Y config");
+          T(MSG_AJUDA_ABAS));
 
     /* Mini player centralizado à direita. */
     {
@@ -426,7 +620,7 @@ static void desenhar_rodape(Ui *u, Layout l)
         x -= 14;
 
         snprintf(titulo, sizeof(titulo), "%.*s", (int) sizeof(titulo) - 1,
-                 st.aberto ? st.titulo : "nada tocando");
+                 st.aberto ? st.titulo : T(MSG_NADA_TOCANDO));
         if (strlen(titulo) > 46) {
             titulo[46] = '\0';
         }
@@ -459,12 +653,12 @@ static void desenhar_painel_musica(Ui *u, Layout l, Rect area)
     /* A capa vem da pasta da faixa em reprodução; sem reprodução, da faixa
      * destacada na lista (é o que se espera ao navegar pela biblioteca). */
     for (int i = 0; i < itens_da_aba(u) && !tem_item; i++) {
-        if (item_da_aba(u, i, &atual) && u->tocando_path[0]
+        if (faixa_da_aba(u, i, &atual) && u->tocando_path[0]
             && strcmp(atual.caminho, u->tocando_path) == 0) {
             tem_item = true;
         }
     }
-    if (!tem_item && item_da_aba(u, u->cursor_tecla, &atual)) {
+    if (!tem_item && faixa_da_aba(u, u->cursor_tecla, &atual)) {
         tem_item = true;
     }
 
@@ -482,7 +676,7 @@ static void desenhar_painel_musica(Ui *u, Layout l, Rect area)
     {
         int etiqueta_w = largura_texto(u->f_pequeno, buf) + 18;
 
-        gfx_fill_round(c, (Rect) { x, y, etiqueta_w, 20 }, 10, wm_rgba(244, 63, 94, 45));
+        gfx_fill_round(c, (Rect) { x, y, etiqueta_w, 20 }, 10, acento_alfa(45));
         texto(c, u->f_pequeno, x + 9, y + 15, COR_ACENTO, buf);
         y += 30;
     }
@@ -502,7 +696,7 @@ static void desenhar_painel_musica(Ui *u, Layout l, Rect area)
             int r = capa.w / 3;
 
             gfx_gradient_v(c, capa, l.raio, wm_rgba(67, 56, 202, 255),
-                           wm_rgba(244, 63, 94, 255));
+                           acento_alfa(255));
             for (int dy = -r; dy <= r; dy++) {
                 int larg = (int) sqrt((double) (r * r - dy * dy));
                 gfx_fill(c, (Rect) { cx - larg, cy + dy, 2 * larg, 1 },
@@ -519,11 +713,11 @@ static void desenhar_painel_musica(Ui *u, Layout l, Rect area)
         int max = area.x + area.w - x - (l.compacto ? 12 : 20);
 
         texto_limitado(c, u->f_titulo, x, y + font_ascent(u->f_titulo), COR_TEXTO,
-                       st.aberto ? st.titulo : "Nada tocando", max);
+                       st.aberto ? st.titulo : T(MSG_NADA_TOCANDO), max);
         y += font_line_height(u->f_titulo) + 2;
         texto_limitado(c, u->f_texto, x, y + font_ascent(u->f_texto), COR_MUTED,
-                       st.aberto ? (st.artista[0] ? st.artista : "artista desconhecido")
-                                 : "Copie músicas para /media na partição BOOT",
+                       st.aberto ? (st.artista[0] ? st.artista : T(MSG_DESCONHECIDO))
+                                 : T(MSG_SEM_MUSICA),
                        max);
         y += font_line_height(u->f_texto) + 2;
         if (st.aberto && st.album[0]) {
@@ -556,43 +750,66 @@ static void desenhar_painel_musica(Ui *u, Layout l, Rect area)
 }
 
 /* Barra de controles com os botões desenhados (não há widgets nativos). */
+/* Rótulo curto do modo de reprodução, para o botão e para o rodapé. */
+static const char *rotulo_modo(int modo)
+{
+    switch (modo) {
+    case WM_MODO_REPETIR_ALBUM:
+        return T(MSG_MODO_REPETIR_TUDO);
+    case WM_MODO_REPETIR_FAIXA:
+        return T(MSG_MODO_REPETIR_FAIXA);
+    case WM_MODO_ALEATORIO:
+        return T(MSG_MODO_ALEATORIA);
+    default:
+        return T(MSG_MODO_SEQUENCIAL);
+    }
+}
+
 static void desenhar_controles(Ui *u, Layout l, Rect area, bool com_foco)
 {
     Canvas *c = u->canvas;
-    static const char *rotulos[] = { "<<", "PLAY", ">>", "STOP", "VOL-" , "VOL+" };
-    int n = 6;
-    int largura = l.compacto ? 54 : 78;
+    /* 0 anterior · 1 play/pause · 2 próximo · 3 parar · 4 modo */
+    static const char *simbolos[] = { "<<", "PLAY", ">>", "STOP", "" };
+    int n = 5;
+    int largura = l.compacto ? 50 : 72;
     int altura = l.compacto ? 24 : 32;
     int x = area.x + 12;
     int y = area.y + 10;
     int passo = largura + (l.compacto ? 5 : 8);
+    struct PlayerStatus st;
+
+    memset(&st, 0, sizeof(st));
+    if (u->player) {
+        player_status(u->player, &st);
+    }
 
     u->n_botoes = 0;
-    for (int i = 0; i < n && i < 4; i++) {
+    for (int i = 0; i < n; i++) {
         Rect r = { x + i * passo, y, largura, altura };
         bool atual = com_foco && u->foco == FOCO_CONTROLES && u->foco_botao == i;
         bool principal = (i == 1);
+        const char *rotulo;
+        int largura_rotulo;
 
         gfx_fill_round(c, r, altura / 2, principal ? COR_ACENTO : wm_rgba(255, 255, 255, 22));
         if (atual) {
             gfx_stroke_round(c, r, altura / 2, COR_TEXTO, 2);
         }
-        {
-            struct PlayerStatus st;
-            const char *rotulo;
-
-            memset(&st, 0, sizeof(st));
-            if (u->player) {
-                player_status(u->player, &st);
-            }
-            rotulo = (i == 1) ? (st.tocando ? "PAUSA" : "TOCAR") : rotulos[i];
-            int largura_rotulo = largura_texto(u->f_pequeno, rotulo);
-            texto(c, u->f_pequeno, r.x + (r.w - largura_rotulo) / 2, r.y + r.h / 2 + 5,
-                  principal ? COR_TEXTO : COR_MUTED, rotulo);
-            snprintf(u->botoes[u->n_botoes++], 64, "%s", rotulo);
+        if (i == 1) {
+            rotulo = st.tocando ? T(MSG_PAUSAR) : T(MSG_TOCAR);
+        } else if (i == 4) {
+            /* Modo: o símbolo do modo em vez da palavra "modo". */
+            rotulo = rotulo_modo(u->modo);
+        } else {
+            rotulo = simbolos[i];
         }
+        largura_rotulo = largura_texto(u->f_pequeno, rotulo);
+        texto_limitado(c, u->f_pequeno,
+                       r.x + (r.w - largura_rotulo) / 2, r.y + r.h / 2 + 5,
+                       principal ? cor_contraste(COR_ACENTO) : COR_MUTED,
+                       rotulo, r.w - 6);
+        snprintf(u->botoes[u->n_botoes++], 64, "%s", rotulo);
     }
-    (void) n;
 }
 
 /* -------------------------------------------------------------- vídeos --- */
@@ -611,16 +828,16 @@ static void desenhar_grade_videos(Ui *u, Layout l, Rect area)
     gfx_fill_round(c, area, l.raio, COR_PAINEL);
     gfx_stroke_round(c, area, l.raio, wm_rgba(255, 255, 255, 18), 1);
 
-    snprintf(buf, sizeof(buf), "%d vídeo(s)%s", u->n_videos,
+    snprintf(buf, sizeof(buf), "%d %s%s", u->n_videos, T(MSG_ABA_VIDEOS),
              library_scanning(u->lib) ? "  (varrendo...)" : "");
     texto(c, u->f_pequeno, area.x + 14, area.y + 20, COR_MUTED, buf);
 
     if (u->n_videos == 0) {
         texto(c, u->f_texto, area.x + 14, area.y + 56, COR_MUTED,
-              "Nenhum vídeo encontrado.");
+              T(MSG_SEM_VIDEO));
         texto(c, u->f_pequeno, area.x + 14, area.y + 56 + font_line_height(u->f_texto),
               wm_rgba(148, 163, 184, 200),
-              "Copie os arquivos para /storage/media (Wi-Fi + scp) ou para o cartão SD.");
+              T(MSG_VARRENDO));
         return;
     }
 
@@ -632,7 +849,7 @@ static void desenhar_grade_videos(Ui *u, Layout l, Rect area)
         Rect r;
         bool selecionado;
 
-        if (!item_da_aba(u, posicao, &item)) {
+        if (!faixa_da_aba(u, posicao, &item)) {
             break;
         }
         r = (Rect) { area.x + 12 + col * (larg + gap),
@@ -726,86 +943,179 @@ static void desenhar_video_tela_cheia(Ui *u)
         barra_progresso(c, (Rect) { 20, y + 34, c->w - 40, 5 },
                         st.duracao > 0 ? st.posicao / st.duracao : 0, COR_ACENTO);
         texto(c, u->f_pequeno, 20, y + 60, COR_MUTED,
-              "B sai   X pausa   ◀ ▶ 10 s   L1/R1 30 s   L/R aba");
+              T(MSG_AJUDA_VIDEO));
     }
 }
 
-/* --------------------------------------------------------------- rádio --- */
+/* ---------------------------------------------------------- biblioteca --- */
 
-static void desenhar_radio(Ui *u, Layout l)
+/* Nome e artista de um álbum saem do primeiro item (todos os itens do trecho
+ * compartilham o mesmo campo album, já que a lista está ordenada por ele). */
+static bool album_info(Ui *u, int album, char *nome, size_t nome_size,
+                       char *artista, size_t artista_size, int *faixas)
+{
+    struct MediaItem item;
+
+    if (album < 0 || album >= u->n_albuns) {
+        return false;
+    }
+    if (album == 0) {
+        snprintf(nome, nome_size, "%s", T(MSG_TODAS_MUSICAS));
+        snprintf(artista, artista_size, "%s", "");
+        *faixas = u->alb_n[0];
+        return true;
+    }
+    if (!library_item(u->lib, u->alb_lib[album], &item)) {
+        return false;
+    }
+    snprintf(nome, nome_size, "%.*s", (int) nome_size - 1,
+             item.album[0] ? item.album : T(MSG_SEM_ALBUM));
+    snprintf(artista, artista_size, "%.*s", (int) artista_size - 1,
+             item.artista[0] ? item.artista : T(MSG_DESCONHECIDO));
+    *faixas = u->alb_n[album];
+    return true;
+}
+
+/* Aba Biblioteca: álbuns à esquerda, faixas do álbum aberto à direita.
+ * Pedido do usuário: "na lista da biblioteca tem que ser navegável para
+ * escolher o álbum". */
+static void desenhar_biblioteca(Ui *u, Layout l)
 {
     Canvas *c = u->canvas;
-    int meio = c->w / 2;
-    Rect esquerda = { l.margem, l.topo_h + l.gap, meio - l.margem - l.gap / 2,
-                      c->h - l.topo_h - l.rodape_h - 2 * l.gap };
-    Rect direita = { meio + l.gap / 2, esquerda.y, esquerda.w, esquerda.h };
-    char buf[128];
-    char aviso[128];
+    Rect area = { l.margem, l.topo_h + l.gap,
+                  c->w - 2 * l.margem, c->h - l.topo_h - l.rodape_h - 2 * l.gap };
+    Rect esq = { area.x, area.y, area.w * 46 / 100, area.h };
+    Rect dir = { area.x + esq.w + l.gap, area.y, area.w - esq.w - l.gap, area.h };
+    int linha_h = l.altura_linha - 4;
+    int y;
+    char buf[192];
 
-    gfx_fill_round(c, esquerda, l.raio, COR_PAINEL);
-    gfx_stroke_round(c, esquerda, l.raio, wm_rgba(255, 255, 255, 18), 1);
-    gfx_fill_round(c, direita, l.raio, COR_PAINEL);
-    gfx_stroke_round(c, direita, l.raio, wm_rgba(255, 255, 255, 18), 1);
+    gfx_fill_round(c, esq, l.raio, COR_PAINEL);
+    gfx_stroke_round(c, esq, l.raio, wm_rgba(255, 255, 255, 18), 1);
+    gfx_fill_round(c, dir, l.raio, COR_PAINEL);
+    gfx_stroke_round(c, dir, l.raio, wm_rgba(255, 255, 255, 18), 1);
 
-    /* Wi-Fi */
-    texto(c, u->f_texto, esquerda.x + 14, esquerda.y + 24, COR_TEXTO, "Wi-Fi");
-    radio_ultimo_aviso(u->radio, aviso, sizeof(aviso));
-    if (u->sys.wifi_conectado) {
-        snprintf(buf, sizeof(buf), "%s  %s", u->sys.wifi_nome[0] ? u->sys.wifi_nome : "conectado",
-                 u->sys.wifi_ip);
-        texto_limitado(c, u->f_pequeno, esquerda.x + 14, esquerda.y + 42, COR_OK, buf,
-                       esquerda.w - 28);
-    } else {
-        texto(c, u->f_pequeno, esquerda.x + 14, esquerda.y + 42, COR_MUTED,
-              u->sys.wifi_presente ? "desconectado" : "sem rádio Wi-Fi");
+    snprintf(buf, sizeof(buf), "%s · %d", T(MSG_ALBUNS), u->n_albuns > 0 ? u->n_albuns - 1 : 0);
+    texto(c, u->f_pequeno, esq.x + 14, esq.y + 22, COR_MUTED, buf);
+
+    if (u->n_albuns <= 1) {
+        texto_limitado(c, u->f_pequeno, esq.x + 14, esq.y + 52, COR_MUTED,
+                       library_scanning(u->lib) ? T(MSG_VARRENDO) : T(MSG_SEM_MUSICA),
+                       esq.w - 28);
+        return;
     }
 
+    /* Lista de álbuns, com o cursor sempre visível. */
     {
-        int y = esquerda.y + 62;
-        int linhas = (esquerda.h - 76) / (l.altura_linha - 4);
+        int linhas = (esq.h - 34) / linha_h;
 
-        for (int i = 0; i < u->n_redes && i < linhas; i++) {
-            struct Rede *rede = &u->redes[i];
-            Rect r = { esquerda.x + 10, y, esquerda.w - 20, l.altura_linha - 4 };
-            bool sel = (u->aba == ABA_RADIO && u->foco == FOCO_LISTA
-                        && u->cursor_tecla == i);
+        if (u->bib_album < u->bib_topo) {
+            u->bib_topo = u->bib_album;
+        }
+        if (u->bib_album >= u->bib_topo + linhas) {
+            u->bib_topo = u->bib_album - linhas + 1;
+        }
+        y = esq.y + 34;
+        for (int i = 0; i < linhas; i++) {
+            int album = u->bib_topo + i;
+            char nome[96], artista[96];
+            int faixas = 0;
+            Rect r = { esq.x + 8, y, esq.w - 16, linha_h };
+            bool sel = (album == u->bib_album);
 
-            if (sel) {
-                gfx_fill_round(c, r, 8, wm_rgba(244, 63, 94, 40));
-            } else if (rede->em_uso) {
-                gfx_fill_round(c, r, 8, wm_rgba(52, 211, 153, 30));
+            if (album >= u->n_albuns || !album_info(u, album, nome, sizeof(nome),
+                                                    artista, sizeof(artista), &faixas)) {
+                break;
             }
-            texto_limitado(c, u->f_pequeno, r.x + 8, r.y + r.h / 2 + 5, COR_TEXTO,
-                           rede->ssid, r.w - 110);
-            snprintf(buf, sizeof(buf), "%d%%  %s", rede->sinal,
-                     rede->seguranca[0] ? rede->seguranca : "aberta");
+            if (sel) {
+                gfx_fill_round(c, r, 8, acento_alfa(u->bib_aberto ? 28 : 45));
+                gfx_stroke_round(c, r, 8, COR_ACENTO, 1);
+            }
+            if (album == 0) {
+                texto_limitado(c, u->f_pequeno, r.x + 10, r.y + r.h / 2 + 5,
+                               COR_TEXTO, nome, r.w - 60);
+            } else {
+                texto_limitado(c, u->f_pequeno, r.x + 10, r.y + r.h / 2 - 2,
+                               sel ? COR_TEXTO : COR_TEXTO, nome, r.w - 20);
+                texto_limitado(c, u->f_pequeno, r.x + 10, r.y + r.h / 2 + 12,
+                               COR_MUTED, artista, r.w - 60);
+            }
+            snprintf(buf, sizeof(buf), "%d", faixas);
             texto(c, u->f_pequeno, r.x + r.w - largura_texto(u->f_pequeno, buf) - 8,
                   r.y + r.h / 2 + 5, COR_MUTED, buf);
-            y += l.altura_linha - 4;
-        }
-        if (u->n_redes == 0) {
-            texto(c, u->f_pequeno, esquerda.x + 14, esquerda.y + 70, COR_MUTED,
-                  radio_ocupado(u->radio) ? "Procurando..." : "Y busca redes");
-        }
-        if (aviso[0]) {
-            texto_limitado(c, u->f_pequeno, esquerda.x + 14,
-                           esquerda.y + esquerda.h - 12, COR_MUTED, aviso, esquerda.w - 28);
+            y += linha_h;
         }
     }
 
-    /* Bluetooth */
-    texto(c, u->f_texto, direita.x + 14, direita.y + 24, COR_TEXTO, "Bluetooth");
-    snprintf(buf, sizeof(buf), "%s%s%s",
-             u->sys.bt_presente ? "" : "sem rádio · ",
-             u->sys.bt_ligado ? "ligado" : "desligado",
-             u->sys.bt_mac[0] ? " · " : "");
-    snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), "%s", u->sys.bt_mac);
-    texto(c, u->f_pequeno, direita.x + 14, direita.y + 42,
-          u->sys.bt_ligado ? COR_OK : COR_MUTED, buf);
-    texto(c, u->f_pequeno, direita.x + 14, direita.y + 66, COR_MUTED,
-          "X liga/desliga · Y procura dispositivos");
-    texto(c, u->f_pequeno, direita.x + 14, direita.y + 84, wm_rgba(148, 163, 184, 200),
-          "Pareamento se faz pelo app do celular ou por bluetoothctl no SSH.");
+    /* Painel direito: capa + faixas do álbum em foco. */
+    {
+        char nome[96], artista[96];
+        int faixas = 0;
+        struct MediaItem item;
+        int capa_tam = l.compacto ? 64 : 96;
+
+        if (!album_info(u, u->bib_album, nome, sizeof(nome),
+                        artista, sizeof(artista), &faixas)) {
+            return;
+        }
+        if (u->bib_album > 0 && library_item(u->lib, u->alb_lib[u->bib_album], &item)) {
+            char capa[WM_PATH_MAX];
+
+            if (library_cover_path(&item, capa, sizeof(capa)) && carregar_capa(u, capa)) {
+                Rect rc = { dir.x + 14, dir.y + 14, capa_tam, capa_tam };
+
+                gfx_blit_round(c, rc, 8, u->capa, u->capa_w, u->capa_h);
+            }
+        }
+        texto_limitado(c, u->f_texto, dir.x + 14 + capa_tam + 12, dir.y + 30,
+                       COR_TEXTO, nome, dir.w - capa_tam - 40);
+        texto_limitado(c, u->f_pequeno, dir.x + 14 + capa_tam + 12, dir.y + 50,
+                       COR_MUTED, artista, dir.w - capa_tam - 40);
+        snprintf(buf, sizeof(buf), "%d %s", faixas, T(MSG_FAIXAS));
+        texto(c, u->f_pequeno, dir.x + 14 + capa_tam + 12, dir.y + 68, COR_MUTED, buf);
+
+        y = dir.y + capa_tam + 24;
+        {
+            int linhas = (dir.y + dir.h - 30 - y) / linha_h;
+
+            if (u->bib_faixa < u->bib_topo_faixas) {
+                u->bib_topo_faixas = u->bib_faixa;
+            }
+            if (u->bib_faixa >= u->bib_topo_faixas + linhas) {
+                u->bib_topo_faixas = u->bib_faixa - linhas + 1;
+            }
+            if (u->bib_topo_faixas < 0) {
+                u->bib_topo_faixas = 0;
+            }
+            for (int i = 0; i < linhas; i++) {
+                int pos = u->bib_topo_faixas + i;
+                Rect r = { dir.x + 8, y, dir.w - 16, linha_h };
+                bool sel = u->bib_aberto && pos == u->bib_faixa;
+                struct MediaItem faixa;
+
+                if (pos >= u->alb_n[u->bib_album]) {
+                    break;
+                }
+                if (!library_item(u->lib, u->musicas[u->alb_ini[u->bib_album] + pos],
+                                  &faixa)) {
+                    break;
+                }
+                if (sel) {
+                    gfx_fill_round(c, r, 8, acento_alfa(45));
+                    gfx_stroke_round(c, r, 8, COR_ACENTO, 1);
+                }
+                snprintf(buf, sizeof(buf), "%02d", pos + 1);
+                texto(c, u->f_pequeno, r.x + 8, r.y + r.h / 2 + 5, COR_MUTED, buf);
+                texto_limitado(c, u->f_pequeno, r.x + 34, r.y + r.h / 2 + 5,
+                               COR_TEXTO, faixa.titulo, r.w - 40);
+                y += linha_h;
+            }
+        }
+        if (!u->bib_aberto) {
+            texto(c, u->f_pequeno, dir.x + 14, dir.y + dir.h - 12, COR_MUTED,
+                  T(MSG_AJUDA_BIBLIOTECA));
+        }
+    }
 }
 
 /* ------------------------------------------------------------- sistema --- */
@@ -833,31 +1143,31 @@ static void desenhar_sistema(Ui *u, Layout l)
     gfx_fill_round(c, direita, l.raio, COR_PAINEL);
     gfx_stroke_round(c, direita, l.raio, wm_rgba(255, 255, 255, 18), 1);
 
-    texto(c, u->f_texto, esquerda.x + 14, esquerda.y + 24, COR_TEXTO, "Sistema");
+    texto(c, u->f_texto, esquerda.x + 14, esquerda.y + 24, COR_TEXTO, T(MSG_INFO_SISTEMA));
     y = esquerda.y + 46;
-    linha_dado(c, u->f_pequeno, esquerda, &y, "Modelo",
+    linha_dado(c, u->f_pequeno, esquerda, &y, T(MSG_MODELO),
                u->sys.modelo[0] ? u->sys.modelo : "?");
     {
         char tempo_ligado[32];
         wm_fmt_time((double) u->sys.uptime, tempo_ligado, sizeof(tempo_ligado));
-        linha_dado(c, u->f_pequeno, esquerda, &y, "Ligado há", tempo_ligado);
+        linha_dado(c, u->f_pequeno, esquerda, &y, T(MSG_TEMPO_LIGADO), tempo_ligado);
     }
     if (u->sys.tem_bateria) {
         snprintf(buf, sizeof(buf), "%d%%%s", u->sys.bateria,
-                 u->sys.carregando ? " (carregando)" : "");
-        linha_dado(c, u->f_pequeno, esquerda, &y, "Bateria", buf);
+                 u->sys.carregando ? T(MSG_CARREGANDO_BAT) : "");
+        linha_dado(c, u->f_pequeno, esquerda, &y, T(MSG_BATERIA), buf);
     } else {
-        linha_dado(c, u->f_pequeno, esquerda, &y, "Bateria", "sem leitura");
+        linha_dado(c, u->f_pequeno, esquerda, &y, T(MSG_BATERIA), T(MSG_INDISPONIVEL));
     }
     snprintf(buf, sizeof(buf), "%d%%", audio_volume(u->audio));
-    linha_dado(c, u->f_pequeno, esquerda, &y, "Volume", buf);
-    linha_dado(c, u->f_pequeno, esquerda, &y, "Áudio",
-               audio_ok(u->audio) ? "ALSA ok" : "sem saída ALSA");
-    linha_dado(c, u->f_pequeno, esquerda, &y, "Biblioteca",
-               library_scanning(u->lib) ? "varrendo..." : "pronta");
+    linha_dado(c, u->f_pequeno, esquerda, &y, T(MSG_VOLUME), buf);
+    linha_dado(c, u->f_pequeno, esquerda, &y, T(MSG_SOM),
+               audio_ok(u->audio) ? "ALSA ok" : T(MSG_SEM_AUDIO));
+    linha_dado(c, u->f_pequeno, esquerda, &y, T(MSG_ABA_BIBLIOTECA),
+               library_scanning(u->lib) ? T(MSG_VARRENDO) : T(MSG_OK));
 
     /* Armazenamento com barra de uso. */
-    texto(c, u->f_texto, direita.x + 14, direita.y + 24, COR_TEXTO, "Armazenamento");
+    texto(c, u->f_texto, direita.x + 14, direita.y + 24, COR_TEXTO, T(MSG_ARMAZENAMENTO));
     y = direita.y + 46;
     {
         static const struct {
@@ -901,17 +1211,17 @@ static void desenhar_sistema(Ui *u, Layout l)
     /* Brilho só como informação: os ajustes ficam no menu (SELECT). Misturar
      * as duas coisas fez o botão de volume parecer controle de brilho. */
     y = direita.y + direita.h - 74;
-    texto(c, u->f_pequeno, direita.x + 14, y, COR_MUTED, "Brilho");
+    texto(c, u->f_pequeno, direita.x + 14, y, COR_MUTED, T(MSG_BRILHO));
     if (u->sys.brilho >= 0) {
         snprintf(buf, sizeof(buf), "%d%%", u->sys.brilho);
         texto(c, u->f_pequeno, direita.x + 90, y, COR_TEXTO, buf);
         barra_progresso(c, (Rect) { direita.x + 14, y + 10, direita.w - 28, 4 },
                         u->sys.brilho / 100.0, COR_ACENTO);
     } else {
-        texto(c, u->f_pequeno, direita.x + 90, y, COR_MUTED, "sem backlight");
+        texto(c, u->f_pequeno, direita.x + 90, y, COR_MUTED, T(MSG_INDISPONIVEL));
     }
     texto(c, u->f_pequeno, direita.x + 14, y + 34, COR_MUTED,
-          "SELECT abre as configurações (brilho, desligar)");
+          T(MSG_AJUDA_SISTEMA));
 }
 
 /* ---------------------------------------------------- menu e diálogo --- */
@@ -920,76 +1230,391 @@ static void caixa_modal(Canvas *c, Layout l, int larg, int alt, Rect *saida)
 {
     Rect caixa = { (c->w - larg) / 2, (c->h - alt) / 2, larg, alt };
 
-    /* Véu escuro: deixa claro que o resto está inativo. */
-    gfx_fill(c, (Rect) { 0, 0, c->w, c->h }, wm_rgba(2, 6, 14, 190));
+    /* Véu: deixa claro que o resto está inativo. A opacidade vem do tema para
+     * os temas "vidro"/"mono" não ficarem com um véu azulado fora de paleta. */
+    gfx_fill(c, (Rect) { 0, 0, c->w, c->h },
+             wm_rgba(0, 0, 0, tema_atual()->veu));
     gfx_fill_round(c, caixa, l.raio, COR_PAINEL_2);
     gfx_stroke_round(c, caixa, l.raio, COR_BORDA, 2);
     *saida = caixa;
 }
 
+/* Uma linha de menu: rótulo à esquerda, valor à direita. `desativado` deixa a
+ * linha apagada e sem realce (é como o modo neural aparece sem NPU). */
+static void linha_menu(Ui *u, Rect r, const char *rotulo, const char *valor,
+                       bool sel, bool desativado)
+{
+    Canvas *c = u->canvas;
+    Color cor_rotulo;
+    Color cor_valor;
+
+    if (desativado) {
+        cor_rotulo = wm_rgba(COR_MUTED.r, COR_MUTED.g, COR_MUTED.b, 150);
+        cor_valor = cor_rotulo;
+    } else {
+        cor_rotulo = sel ? COR_TEXTO : COR_MUTED;
+        cor_valor = sel ? COR_ACENTO : COR_MUTED;
+    }
+
+    if (sel) {
+        if (desativado) {
+            gfx_fill_round(c, r, 8, wm_rgba(255, 255, 255, 8));
+            gfx_stroke_round(c, r, 8, COR_BORDA, 1);
+        } else if (tema_atual()->brilho_foco) {
+            gfx_fill_round(c, r, 8, wm_rgba(24, 24, 24, 242));
+            gfx_stroke_round(c, r, 8, COR_BORDA, 2);
+        } else {
+            gfx_fill_round(c, r, 8, acento_alfa(60));
+            gfx_stroke_round(c, r, 8, COR_ACENTO, 1);
+        }
+    } else {
+        gfx_fill_round(c, r, 8, wm_rgba(255, 255, 255, 8));
+    }
+    texto_limitado(c, u->f_pequeno, r.x + 12, r.y + r.h / 2 + 5, cor_rotulo, rotulo,
+                   r.w - 24 - (valor && valor[0] ? 120 : 0));
+    if (valor && valor[0]) {
+        texto(c, u->f_pequeno,
+              r.x + r.w - largura_texto(u->f_pequeno, valor) - 12,
+              r.y + r.h / 2 + 5, cor_valor, valor);
+    }
+}
+
+/* Rótulos e valores dos itens da raiz do menu. */
+static void rotulo_menu_raiz(Ui *u, int item, const char **rotulo, char *valor,
+                             size_t valor_size, bool *desativado)
+{
+    *desativado = false;
+    valor[0] = '\0';
+    switch (item) {
+    case MENU_BRILHO:
+        *rotulo = T(MSG_BRILHO);
+        if (u->sys.brilho >= 0) {
+            snprintf(valor, valor_size, "< %d%% >", u->sys.brilho);
+        } else {
+            snprintf(valor, valor_size, "%s", T(MSG_INDISPONIVEL));
+        }
+        break;
+    case MENU_WIFI:
+        *rotulo = T(MSG_WIFI);
+        if (!u->sys.wifi_presente) {
+            snprintf(valor, valor_size, "%s", T(MSG_AUSENTE));
+        } else if (u->sys.wifi_conectado) {
+            snprintf(valor, valor_size, "%.24s", u->sys.wifi_nome);
+        } else {
+            snprintf(valor, valor_size, "%s", T(MSG_DESCONECTADO));
+        }
+        break;
+    case MENU_BT:
+        *rotulo = T(MSG_BLUETOOTH);
+        if (!u->sys.bt_presente) {
+            snprintf(valor, valor_size, "%s", T(MSG_AUSENTE));
+        } else {
+            snprintf(valor, valor_size, "%s",
+                     u->sys.bt_ligado ? T(MSG_LIGADO) : T(MSG_DESLIGADO));
+        }
+        break;
+    case MENU_SOM:
+        *rotulo = T(MSG_SOM);
+        snprintf(valor, valor_size, "%s", T(dsp_msg_preset(dsp_preset())));
+        break;
+    case MENU_IDIOMA:
+        *rotulo = T(MSG_IDIOMA);
+        snprintf(valor, valor_size, "%.28s", wm_lang_nome(wm_lang()));
+        break;
+    case MENU_RELOGIO:
+        *rotulo = T(MSG_RELOGIO);
+        {
+            time_t agora = time(NULL);
+            struct tm tm;
+
+            localtime_r(&agora, &tm);
+            snprintf(valor, valor_size, "%02d:%02d", tm.tm_hour, tm.tm_min);
+        }
+        break;
+    case MENU_TEMA:
+        *rotulo = T(MSG_TEMA);
+        snprintf(valor, valor_size, "%s", T(tema_msg_nome(tema_atual_id())));
+        break;
+    case MENU_APAGAR:
+        *rotulo = T(MSG_APAGAR_TELA);
+        break;
+    case MENU_DESLIGAR:
+        *rotulo = T(MSG_DESLIGAR);
+        break;
+    case MENU_REINICIAR:
+        *rotulo = T(MSG_REINICIAR);
+        break;
+    default:
+        *rotulo = T(MSG_FECHAR_MENU);
+        snprintf(valor, valor_size, "B");
+        break;
+    }
+}
+
+/* Número de linhas e o cursor do submenu atual. */
+static int submenu_linhas(Ui *u, int tela)
+{
+    switch (tela) {
+    case TELA_WIFI:
+        /* procurar + redes + voltar */
+        return u->n_redes + 2;
+    case TELA_BT:
+        /* ligar/desligar + procurar + dispositivos + voltar */
+        return u->n_bt_devs + 3;
+    case TELA_SOM:
+        return 6;
+    case TELA_EQ:
+        return WM_EQ_BANDAS + 1;
+    case TELA_IDIOMA:
+        return WM_LANG_TOTAL + 1;
+    case TELA_RELOGIO:
+        /* ano, mês, dia, hora, minuto, aplicar, voltar */
+        return 7;
+    case TELA_TEMA:
+        return WM_TEMA_TOTAL + 1;
+    default:
+        return MENU_ITENS;
+    }
+}
+
+static void desenhar_submenu(Ui *u, Layout l, Rect caixa, const char *titulo)
+{
+    Canvas *c = u->canvas;
+    int n = submenu_linhas(u, u->menu_tela);
+    int linha_h = l.compacto ? 24 : 30;
+    int visiveis = (caixa.h - 70) / linha_h;
+    int inicio = 0;
+    int y = caixa.y + 44;
+    char buf[96];
+
+    texto(c, u->f_texto, caixa.x + 16, caixa.y + 26, COR_TEXTO, titulo);
+
+    if (u->menu_curso >= visiveis) {
+        inicio = u->menu_curso - visiveis + 1;
+    }
+    for (int i = 0; i < visiveis; i++) {
+        int item = inicio + i;
+        Rect r = { caixa.x + 10, y, caixa.w - 20, linha_h - 4 };
+        bool sel;
+        const char *rotulo = "";
+        char valor[64] = "";
+        bool desativado = false;
+
+        if (item >= n) {
+            break;
+        }
+        sel = (u->menu_curso == item);
+
+        switch (u->menu_tela) {
+        case TELA_WIFI:
+            if (item == 0) {
+                rotulo = T(MSG_WIFI_PROCURAR);
+                if (!u->sys.wifi_presente) {
+                    desativado = true;
+                    snprintf(valor, sizeof(valor), "%s", T(MSG_WIFI_SEM_RADIO));
+                } else if (radio_ocupado(u->radio)) {
+                    snprintf(valor, sizeof(valor), "%s", T(MSG_PROCURANDO));
+                }
+            } else if (item <= u->n_redes) {
+                struct Rede *rede = &u->redes[item - 1];
+
+                rotulo = rede->ssid;
+                snprintf(valor, sizeof(valor), "%d%% %s", rede->sinal,
+                         rede->seguranca[0] ? rede->seguranca : T(MSG_WIFI_ABERTA));
+            } else {
+                rotulo = u->n_redes ? T(MSG_SUBMENU_VOLTAR) : T(MSG_WIFI_NENHUMA);
+                if (!u->n_redes) {
+                    desativado = true;
+                }
+                if (u->n_redes == 0 && !u->sys.wifi_presente) {
+                    rotulo = T(MSG_SUBMENU_VOLTAR);
+                    desativado = false;
+                }
+            }
+            break;
+        case TELA_BT:
+            if (item == 0) {
+                rotulo = u->sys.bt_ligado ? T(MSG_BT_DESLIGAR) : T(MSG_BT_LIGAR);
+                desativado = !u->sys.bt_presente;
+            } else if (item == 1) {
+                rotulo = T(MSG_BT_PROCURAR);
+                desativado = !u->sys.bt_presente || !u->sys.bt_ligado;
+            } else if (item < u->n_bt_devs + 2) {
+                struct BtDevice *d = &u->bt_devs[item - 2];
+
+                rotulo = d->nome;
+                snprintf(valor, sizeof(valor), "%s",
+                         d->conectado ? T(MSG_CONECTADO)
+                                      : (d->pareado ? T(MSG_BT_VISIVEL) : ""));
+            } else {
+                rotulo = T(MSG_SUBMENU_VOLTAR);
+            }
+            break;
+        case TELA_SOM:
+            switch (item) {
+            case 0:
+                rotulo = T(MSG_SOM_PRESET);
+                snprintf(valor, sizeof(valor), "< %s >", T(dsp_msg_preset(dsp_preset())));
+                break;
+            case 1:
+                rotulo = T(MSG_SOM_PREAMP);
+                snprintf(valor, sizeof(valor), "< %+.0f dB >", (double) dsp_preamp());
+                break;
+            case 2:
+                rotulo = T(MSG_SOM_EQUALIZADOR);
+                snprintf(valor, sizeof(valor), ">");
+                break;
+            case 3:
+                rotulo = T(MSG_SOM_NEURAL);
+                snprintf(valor, sizeof(valor), "%s",
+                         dsp_neural() ? T(MSG_ATIVADO) : T(MSG_DESATIVADO));
+                desativado = !dsp_neural_disponivel();
+                break;
+            case 4:
+                rotulo = T(MSG_SOM_RESTAURAR);
+                break;
+            default:
+                rotulo = T(MSG_SUBMENU_VOLTAR);
+                break;
+            }
+            break;
+        case TELA_EQ:
+            if (item < WM_EQ_BANDAS) {
+                int f = wm_eq_freqs[item];
+                float g = dsp_banda(item);
+
+                snprintf(buf, sizeof(buf), "%d %s", f, T(MSG_HZ));
+                rotulo = buf;
+                (void) T(MSG_BANDA);
+                snprintf(valor, sizeof(valor), "< %+.0f %s >", (double) g, T(MSG_DB));
+            } else {
+                rotulo = T(MSG_SUBMENU_VOLTAR);
+            }
+            break;
+        case TELA_IDIOMA:
+            if (item < WM_LANG_TOTAL) {
+                rotulo = wm_lang_nome(item);
+                if (item == wm_lang()) {
+                    snprintf(valor, sizeof(valor), "%s", T(MSG_EM_USO));
+                }
+            } else {
+                rotulo = T(MSG_SUBMENU_VOLTAR);
+            }
+            break;
+        case TELA_RELOGIO:
+            switch (item) {
+            case 0:
+                rotulo = T(MSG_RELOGIO_ANO);
+                snprintf(valor, sizeof(valor), "< %d >", u->relogio.tm_year + 1900);
+                break;
+            case 1:
+                rotulo = T(MSG_RELOGIO_MES);
+                snprintf(valor, sizeof(valor), "< %02d >", u->relogio.tm_mon + 1);
+                break;
+            case 2:
+                rotulo = T(MSG_RELOGIO_DIA);
+                snprintf(valor, sizeof(valor), "< %02d >", u->relogio.tm_mday);
+                break;
+            case 3:
+                rotulo = T(MSG_RELOGIO_HORA);
+                snprintf(valor, sizeof(valor), "< %02d >", u->relogio.tm_hour);
+                break;
+            case 4:
+                rotulo = T(MSG_RELOGIO_MINUTO);
+                snprintf(valor, sizeof(valor), "< %02d >", u->relogio.tm_min);
+                break;
+            case 5:
+                rotulo = T(MSG_RELOGIO_APLICAR);
+                break;
+            default:
+                rotulo = T(MSG_SUBMENU_VOLTAR);
+                break;
+            }
+            break;
+        case TELA_TEMA:
+            if (item < WM_TEMA_TOTAL) {
+                rotulo = T(tema_msg_nome(item));
+                if (item == tema_atual_id()) {
+                    snprintf(valor, sizeof(valor), "%s", T(MSG_EM_USO));
+                }
+            } else {
+                rotulo = T(MSG_SUBMENU_VOLTAR);
+            }
+            break;
+        default:
+            break;
+        }
+        linha_menu(u, r, rotulo, valor, sel, desativado);
+        y += linha_h;
+    }
+    texto(c, u->f_pequeno, caixa.x + 16, caixa.y + caixa.h - 12, COR_MUTED,
+          T(MSG_AJUDA_MENU));
+}
+
 static void desenhar_menu(Ui *u, Layout l)
 {
     Canvas *c = u->canvas;
-    int larg = l.compacto ? c->w - 60 : 420;
-    int alt = l.compacto ? 250 : 300;
     Rect caixa;
-    Rect linha;
-    char buf[96];
-    int y;
 
-    caixa_modal(c, l, larg, alt, &caixa);
-    texto(c, u->f_texto, caixa.x + 16, caixa.y + 26, COR_TEXTO, "Configurações");
+    if (u->menu_tela == TELA_RAIZ) {
+        int larg = l.compacto ? c->w - 40 : 420;
+        int linha_h = l.compacto ? 26 : 32;
+        int alt = 46 + MENU_ITENS * linha_h + 22;
+        char valor[64];
+        int y;
 
-    for (int i = 0; i < MENU_ITENS; i++) {
-        bool sel = (u->menu_item == i);
-        const char *rotulo;
-        char valor[32] = "";
+        if (alt > c->h - 20) {
+            alt = c->h - 20;
+        }
+        caixa_modal(c, l, larg, alt, &caixa);
+        texto(c, u->f_texto, caixa.x + 16, caixa.y + 26, COR_TEXTO, T(MSG_MENU));
 
-        linha = (Rect) { caixa.x + 10, caixa.y + 40 + i * (l.compacto ? 34 : 40),
-                         caixa.w - 20, l.compacto ? 30 : 34 };
-        switch (i) {
-        case MENU_BRILHO:
-            rotulo = "Brilho";
-            if (u->sys.brilho >= 0) {
-                snprintf(valor, sizeof(valor), "◀ %d%% ▶", u->sys.brilho);
-            } else {
-                snprintf(valor, sizeof(valor), "sem backlight");
-            }
+        y = caixa.y + 40;
+        for (int i = 0; i < MENU_ITENS; i++) {
+            const char *rotulo;
+            bool desativado;
+            Rect r = { caixa.x + 10, y, caixa.w - 20, linha_h - 4 };
+
+            rotulo_menu_raiz(u, i, &rotulo, valor, sizeof(valor), &desativado);
+            linha_menu(u, r, rotulo, valor, u->menu_item == i, desativado);
+            y += linha_h;
+        }
+        texto(c, u->f_pequeno, caixa.x + 16, caixa.y + caixa.h - 12, COR_MUTED,
+              T(MSG_AJUDA_MENU));
+        return;
+    }
+
+    {
+        int larg = l.compacto ? c->w - 32 : 460;
+        int alt = c->h - 2 * l.margem;
+        const char *titulo = T(MSG_MENU);
+
+        switch (u->menu_tela) {
+        case TELA_WIFI:
+            titulo = T(MSG_WIFI);
             break;
-        case MENU_APAGAR:
-            rotulo = "Apagar a tela";
-            snprintf(valor, sizeof(valor), "economia de bateria");
+        case TELA_BT:
+            titulo = T(MSG_BLUETOOTH);
             break;
-        case MENU_DESLIGAR:
-            rotulo = "Desligar";
-            snprintf(valor, sizeof(valor), "segure o power 3 s");
+        case TELA_SOM:
+            titulo = T(MSG_SOM);
             break;
-        case MENU_REINICIAR:
-            rotulo = "Reiniciar";
+        case TELA_EQ:
+            titulo = T(MSG_SOM_EQUALIZADOR);
+            break;
+        case TELA_IDIOMA:
+            titulo = T(MSG_IDIOMA);
+            break;
+        case TELA_RELOGIO:
+            titulo = T(MSG_RELOGIO);
             break;
         default:
-            rotulo = "Fechar";
-            snprintf(valor, sizeof(valor), "B");
+            titulo = T(MSG_TEMA);
             break;
         }
-        if (sel) {
-            gfx_fill_round(c, linha, 8, wm_rgba(244, 63, 94, 60));
-            gfx_stroke_round(c, linha, 8, COR_ACENTO, 1);
-        } else {
-            gfx_fill_round(c, linha, 8, wm_rgba(255, 255, 255, 8));
-        }
-        texto(c, u->f_pequeno, linha.x + 12, linha.y + linha.h / 2 + 5,
-              sel ? COR_TEXTO : COR_MUTED, rotulo);
-        if (valor[0]) {
-            texto(c, u->f_pequeno,
-                  linha.x + linha.w - largura_texto(u->f_pequeno, valor) - 12,
-                  linha.y + linha.h / 2 + 5, sel ? COR_ACENTO : COR_MUTED, valor);
-        }
+        caixa_modal(c, l, larg, alt, &caixa);
+        desenhar_submenu(u, l, caixa, titulo);
     }
-    y = caixa.y + caixa.h - 12;
-    texto(c, u->f_pequeno, caixa.x + 16, y, COR_MUTED,
-          "◀ ▶ ajusta · B fecha");
-    (void) buf;
 }
 
 static void desenhar_dialogo(Ui *u, Layout l)
@@ -999,12 +1624,18 @@ static void desenhar_dialogo(Ui *u, Layout l)
     int alt = l.compacto ? 150 : 170;
     Rect caixa;
     Rect botao;
-    static const char *opcoes[] = { "Cancelar", "Desligar" };
+    const char *opcoes[2];
+
+    opcoes[0] = T(MSG_CANCELAR);
+    opcoes[1] = u->dialogo_reiniciar ? T(MSG_REINICIAR) : T(MSG_DESLIGAR);
 
     caixa_modal(c, l, larg, alt, &caixa);
-    texto(c, u->f_texto, caixa.x + 16, caixa.y + 30, COR_TEXTO, "Desligar o aparelho?");
+    texto_limitado(c, u->f_texto, caixa.x + 16, caixa.y + 30, COR_TEXTO,
+                   u->dialogo_reiniciar ? T(MSG_CONFIRMA_REINICIAR)
+                                        : T(MSG_CONFIRMA_DESLIGAR),
+                   caixa.w - 32);
     texto(c, u->f_pequeno, caixa.x + 16, caixa.y + 52, COR_MUTED,
-          "A música para e o aparelho desliga.");
+          u->dialogo_reiniciar ? T(MSG_REINICIANDO) : T(MSG_DESLIGANDO));
 
     for (int i = 0; i < 2; i++) {
         bool sel = (u->dialogo_item == i);
@@ -1019,12 +1650,11 @@ static void desenhar_dialogo(Ui *u, Layout l)
         {
             int tw = largura_texto(u->f_texto, opcoes[i]);
             texto(c, u->f_texto, botao.x + (botao.w - tw) / 2,
-                  botao.y + botao.h / 2 + 6, COR_TEXTO, opcoes[i]);
+                  botao.y + botao.h / 2 + 6,
+                  (i == 1) ? cor_contraste(COR_ACENTO) : COR_TEXTO, opcoes[i]);
         }
     }
 }
-
-/* ------------------------------------------------------- teclado virtual --- */
 
 static const char TECLAS[5][10][16] = {
     { "1", "2", "3", "4", "5", "6", "7", "8", "9", "0" },
@@ -1051,7 +1681,7 @@ static void desenhar_teclado(Ui *u, Layout l)
     gfx_fill_round(c, caixa, l.raio, COR_PAINEL_2);
     gfx_stroke_round(c, caixa, l.raio, COR_BORDA, 2);
 
-    snprintf(buf, sizeof(buf), "Senha de %s", u->ssid_pendente);
+    snprintf(buf, sizeof(buf), "%s %s", T(MSG_WIFI_DIGITE_SENHA), u->ssid_pendente);
     texto(c, u->f_texto, caixa.x + 16, caixa.y + 26, COR_TEXTO, buf);
 
     /* Campo: mostra asteriscos (é uma senha). */
@@ -1111,7 +1741,7 @@ static void desenhar_teclado(Ui *u, Layout l)
         }
     }
     texto(c, u->f_pequeno, caixa.x + 16, caixa.y + caixa.h - 10, COR_MUTED,
-          "A escolhe   B cancela   L/R muda de linha");
+          T(MSG_AJUDA_TECLADO));
 }
 
 /* ------------------------------------------------------------- desenho --- */
@@ -1161,8 +1791,8 @@ void ui_render(Ui *u)
 
             gfx_fill_round(c, lista, l.raio, COR_PAINEL);
             gfx_stroke_round(c, lista, l.raio, wm_rgba(255, 255, 255, 18), 1);
-            snprintf(buf, sizeof(buf), "Biblioteca · %d faixa(s)%s", u->n_musicas,
-                     library_scanning(u->lib) ? " (varrendo)" : "");
+            snprintf(buf, sizeof(buf), "%s · %d %s%s", T(MSG_ABA_BIBLIOTECA), u->n_musicas, T(MSG_FAIXAS),
+                     library_scanning(u->lib) ? " ..." : "");
             texto(c, u->f_pequeno, lista.x + 14, lista.y + 22, COR_MUTED, buf);
 
             {
@@ -1182,13 +1812,13 @@ void ui_render(Ui *u)
                     Rect r;
                     bool sel;
 
-                    if (!item_da_aba(u, posicao, &item)) {
+                    if (!faixa_da_aba(u, posicao, &item)) {
                         break;
                     }
                     r = (Rect) { lista.x + 8, y, lista.w - 16, l.altura_linha - 6 };
                     sel = (u->foco == FOCO_LISTA && posicao == u->cursor_tecla);
                     if (sel) {
-                        gfx_fill_round(c, r, 8, wm_rgba(244, 63, 94, 45));
+                        gfx_fill_round(c, r, 8, acento_alfa(45));
                         gfx_stroke_round(c, r, 8, COR_ACENTO, 1);
                     }
                     {
@@ -1206,7 +1836,7 @@ void ui_render(Ui *u)
                 }
                 if (u->n_musicas == 0) {
                     texto(c, u->f_pequeno, lista.x + 14, lista.y + 56, COR_MUTED,
-                          "Nada encontrado. Copie músicas para /storage/media.");
+                          T(MSG_SEM_MUSICA));
                 }
             }
             break;
@@ -1214,8 +1844,8 @@ void ui_render(Ui *u)
         case ABA_VIDEOS:
             desenhar_grade_videos(u, l, area);
             break;
-        case ABA_RADIO:
-            desenhar_radio(u, l);
+        case ABA_BIBLIOTECA:
+            desenhar_biblioteca(u, l);
             break;
         default:
             desenhar_sistema(u, l);
@@ -1238,15 +1868,30 @@ void ui_render(Ui *u)
 
 /* --------------------------------------------------------------- ações --- */
 
-static void pedir_tocar(Ui *u)
+/* Pede ao main para tocar o item sob o cursor. */
+static void pedir_tocar(Ui *u, bool forcar)
 {
     struct MediaItem item;
 
-    if (u->foco != FOCO_LISTA) {
+    if (u->foco != FOCO_LISTA && !forcar) {
         u->quer_toggle = true;
         return;
     }
-    if (!item_da_aba(u, u->cursor_tecla, &item)) {
+    /* Biblioteca com o cursor na lista de ÁLBUNS: A abre o álbum (é assim que se
+     * escolhe o álbum, como o usuário pediu); o play vem depois, nas faixas. */
+    if (u->aba == ABA_BIBLIOTECA && !u->bib_aberto && !forcar) {
+        if (u->bib_album >= 0 && u->bib_album < u->n_albuns) {
+            u->bib_aberto = true;
+            u->bib_faixa = 0;
+            u->cursor_tecla = 0;
+            u->bib_topo_faixas = 0;
+        }
+        return;
+    }
+    if (u->aba == ABA_BIBLIOTECA) {
+        u->cursor_tecla = u->bib_faixa;
+    }
+    if (!faixa_da_aba(u, u->cursor_tecla, &item)) {
         return;
     }
     snprintf(u->quer_tocar, sizeof(u->quer_tocar), "%s", item.caminho);
@@ -1345,19 +1990,102 @@ static int ajustar_brilho(Ui *u, int delta)
     return atual;
 }
 
+static void recarregar_relogio(Ui *u)
+{
+    time_t agora = time(NULL);
+
+    localtime_r(&agora, &u->relogio);
+}
+
+/* Grava o equalizador inteiro no arquivo de ajustes. É barato (poucas linhas) e
+ * garante que o ajuste sobreviva ao botão de power, que desliga na hora. */
+static void salvar_eq(void)
+{
+    char chave[16];
+
+    for (int i = 0; i < WM_EQ_BANDAS; i++) {
+        snprintf(chave, sizeof(chave), "eq%d", i);
+        wm_settings_set_int(chave, (int) dsp_banda(i));
+    }
+    wm_settings_set_int("eq_preset", dsp_preset());
+    wm_settings_set_int("preamp", (int) dsp_preamp());
+    wm_settings_save();
+}
+
+/* Lê o equalizador do arquivo de ajustes (chamado no ui_create). */
+static void carregar_eq(void)
+{
+    int preset = wm_settings_get_int("eq_preset", WM_PRESET_PLANO);
+    char chave[16];
+
+    if (preset == WM_PRESET_PERSONALIZADO) {
+        /* O preset "personalizado" não tem tabela: os ganhos são os salvos. */
+        dsp_aplicar_preset(WM_PRESET_PERSONALIZADO);
+        for (int i = 0; i < WM_EQ_BANDAS; i++) {
+            snprintf(chave, sizeof(chave), "eq%d", i);
+            dsp_set_banda(i, (float) wm_settings_get_int(chave, 0));
+        }
+    } else {
+        dsp_aplicar_preset(preset);
+    }
+    dsp_set_preamp((float) wm_settings_get_int("preamp", 0));
+}
+
 static void abrir_menu(Ui *u)
 {
     u->menu_aberto = true;
+    u->dialogo_aberto = false;
+    u->menu_tela = TELA_RAIZ;
     u->menu_item = MENU_BRILHO;
+    u->menu_curso = 0;
+    recarregar_relogio(u);
 }
 
 static void fechar_menu(Ui *u)
 {
     u->menu_aberto = false;
     u->dialogo_aberto = false;
+    u->menu_tela = TELA_RAIZ;
 }
 
-/* Executa o item selecionado do menu. Devolve a ação para o main. */
+static void abrir_dialogo(Ui *u, bool reiniciar)
+{
+    u->dialogo_aberto = true;
+    u->dialogo_reiniciar = reiniciar;
+    /* O foco começa em "cancelar": um toque errado não desliga o aparelho. */
+    u->dialogo_item = 0;
+}
+
+static void entrar_submenu(Ui *u, int tela)
+{
+    u->menu_tela = tela;
+    u->menu_curso = 0;
+    if (tela == TELA_WIFI) {
+        radio_scan_wifi(u->radio);
+    } else if (tela == TELA_BT) {
+        u->n_bt_devs = radio_bt_dispositivos(u->radio, u->bt_devs, BT_DEV_MAX);
+    } else if (tela == TELA_RELOGIO) {
+        recarregar_relogio(u);
+    }
+}
+
+/* Volta um nível: do equalizador para o som, dos submenus para a raiz. */
+static void voltar_submenu(Ui *u)
+{
+    if (u->menu_tela == TELA_EQ) {
+        u->menu_tela = TELA_SOM;
+        u->menu_curso = 2;
+        return;
+    }
+    if (u->menu_tela == TELA_RAIZ) {
+        fechar_menu(u);
+        return;
+    }
+    u->menu_tela = TELA_RAIZ;
+    u->menu_curso = 0;
+}
+
+/* Executa o item selecionado da raiz. Devolve a ação para o main. */
 static int ativar_item_menu(Ui *u)
 {
     switch (u->menu_item) {
@@ -1365,37 +2093,296 @@ static int ativar_item_menu(Ui *u)
         /* Enter no brilho sobe 5% (◀▶ ajusta nos dois sentidos). */
         ajustar_brilho(u, 5);
         return WM_ACAO_BRILHO;
+    case MENU_WIFI:
+        entrar_submenu(u, TELA_WIFI);
+        return WM_ACAO_NENHUMA;
+    case MENU_BT:
+        entrar_submenu(u, TELA_BT);
+        return WM_ACAO_NENHUMA;
+    case MENU_SOM:
+        entrar_submenu(u, TELA_SOM);
+        return WM_ACAO_NENHUMA;
+    case MENU_IDIOMA:
+        entrar_submenu(u, TELA_IDIOMA);
+        return WM_ACAO_NENHUMA;
+    case MENU_RELOGIO:
+        entrar_submenu(u, TELA_RELOGIO);
+        return WM_ACAO_NENHUMA;
+    case MENU_TEMA:
+        entrar_submenu(u, TELA_TEMA);
+        return WM_ACAO_NENHUMA;
     case MENU_APAGAR:
         u->menu_aberto = false;
+        u->tela_apagada = true;
         return WM_ACAO_TELA_APAGAR;
     case MENU_DESLIGAR:
-        /* Confirmação: desligar por engano no meio de uma música é chato. */
-        u->dialogo_aberto = true;
-        u->dialogo_item = 1;
+        abrir_dialogo(u, false);
         return WM_ACAO_NENHUMA;
     case MENU_REINICIAR:
-        u->menu_aberto = false;
-        return WM_ACAO_REINICIAR;
+        abrir_dialogo(u, true);
+        return WM_ACAO_NENHUMA;
     default:
-        u->menu_aberto = false;
+        fechar_menu(u);
         return WM_ACAO_NENHUMA;
     }
 }
 
-/* Diálogo de desligar: 0 = cancelar, 1 = desligar. */
+/* Quantos dias tem o mês de `mes` (0..11) no ano `ano`. */
+static int dias_no_mes(int mes, int ano)
+{
+    static const int DIAS[12] = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+
+    if (mes < 0 || mes > 11) {
+        return 31;
+    }
+    if (mes == 1 && ((ano % 4 == 0 && ano % 100 != 0) || ano % 400 == 0)) {
+        return 29;
+    }
+    return DIAS[mes];
+}
+
+/* Ajusta um campo do relógio em `delta`. O dia é validado contra o mês para não
+ * gravar 31 de fevereiro (mktime normalizaria e o usuário não entenderia). */
+static void ajustar_relogio(Ui *u, int delta)
+{
+    switch (u->menu_curso) {
+    case 0:
+        u->relogio.tm_year += delta;
+        if (u->relogio.tm_year < 100) {
+            u->relogio.tm_year = 100;      /* 2000 */
+        }
+        if (u->relogio.tm_year > 199) {
+            u->relogio.tm_year = 199;      /* 2099 */
+        }
+        break;
+    case 1:
+        u->relogio.tm_mon += delta;
+        if (u->relogio.tm_mon < 0) {
+            u->relogio.tm_mon = 11;
+        }
+        if (u->relogio.tm_mon > 11) {
+            u->relogio.tm_mon = 0;
+        }
+        break;
+    case 2: {
+        int meses = dias_no_mes(u->relogio.tm_mon, u->relogio.tm_year + 1900);
+
+        u->relogio.tm_mday += delta;
+        if (u->relogio.tm_mday < 1) {
+            u->relogio.tm_mday = meses;
+        }
+        if (u->relogio.tm_mday > meses) {
+            u->relogio.tm_mday = 1;
+        }
+        break;
+    }
+    case 3:
+        u->relogio.tm_hour = (u->relogio.tm_hour + delta + 24) % 24;
+        break;
+    default:
+        u->relogio.tm_min = (u->relogio.tm_min + delta + 60) % 60;
+        break;
+    }
+    {
+        int meses = dias_no_mes(u->relogio.tm_mon, u->relogio.tm_year + 1900);
+
+        if (u->relogio.tm_mday > meses) {
+            u->relogio.tm_mday = meses;
+        }
+    }
+}
+
+/* Executa o item do submenu aberto. */
+static int ativar_submenu(Ui *u)
+{
+    int n = submenu_linhas(u, u->menu_tela);
+
+    if (u->menu_curso < 0 || u->menu_curso >= n) {
+        return WM_ACAO_NENHUMA;
+    }
+    switch (u->menu_tela) {
+    case TELA_WIFI:
+        if (u->menu_curso == 0) {
+            radio_scan_wifi(u->radio);
+        } else if (u->menu_curso <= u->n_redes) {
+            struct Rede *rede = &u->redes[u->menu_curso - 1];
+
+            if (rede->seguranca[0] && wm_casecmp(rede->seguranca, "aberta") != 0
+                && wm_casecmp(rede->seguranca, "--") != 0) {
+                abrir_teclado(u, rede->ssid);
+            } else {
+                radio_conectar_wifi(u->radio, rede->ssid, "");
+            }
+        } else {
+            voltar_submenu(u);
+        }
+        break;
+    case TELA_BT:
+        if (u->menu_curso == 0) {
+            radio_bt_power(u->radio, !u->sys.bt_ligado);
+        } else if (u->menu_curso == 1) {
+            if (u->sys.bt_ligado) {
+                radio_bt_scan(u->radio);
+            }
+        } else if (u->menu_curso <= u->n_bt_devs) {
+            radio_bt_connect(u->radio, u->bt_devs[u->menu_curso - 2].mac);
+        } else {
+            voltar_submenu(u);
+        }
+        break;
+    case TELA_SOM:
+        switch (u->menu_curso) {
+        case 0:
+            dsp_aplicar_preset((dsp_preset() + 1) % WM_PRESET_TOTAL);
+            salvar_eq();
+            break;
+        case 1:
+            dsp_set_preamp(dsp_preamp() + 1.0f);
+            wm_settings_set_int("preamp", (int) dsp_preamp());
+            wm_settings_save();
+            break;
+        case 2:
+            entrar_submenu(u, TELA_EQ);
+            break;
+        case 3:
+            if (dsp_neural_disponivel()) {
+                dsp_set_neural(!dsp_neural());
+                wm_settings_set_int("neural", dsp_neural() ? 1 : 0);
+                wm_settings_save();
+            }
+            break;
+        case 4:
+            dsp_reset();
+            salvar_eq();
+            break;
+        default:
+            voltar_submenu(u);
+            break;
+        }
+        break;
+    case TELA_EQ:
+        if (u->menu_curso < WM_EQ_BANDAS) {
+            dsp_set_banda(u->menu_curso, 0.0f);   /* A zera a banda */
+            salvar_eq();
+        } else {
+            voltar_submenu(u);
+        }
+        break;
+    case TELA_IDIOMA:
+        if (u->menu_curso < WM_LANG_TOTAL) {
+            wm_lang_set(u->menu_curso);
+            wm_settings_set("idioma", wm_lang_code(u->menu_curso));
+            wm_settings_save();
+        } else {
+            voltar_submenu(u);
+        }
+        break;
+    case TELA_RELOGIO:
+        if (u->menu_curso == 5) {
+            wm_clock_set(&u->relogio);
+        } else if (u->menu_curso == 6) {
+            voltar_submenu(u);
+        }
+        break;
+    case TELA_TEMA:
+        if (u->menu_curso < WM_TEMA_TOTAL) {
+            tema_set(u->menu_curso);
+            wm_settings_set("tema", tema_codigo(u->menu_curso));
+            wm_settings_save();
+        } else {
+            voltar_submenu(u);
+        }
+        break;
+    default:
+        voltar_submenu(u);
+        break;
+    }
+    return WM_ACAO_NENHUMA;
+}
+
+/* ◀▶ dentro do submenu. */
+static void ajustar_submenu(Ui *u, int delta)
+{
+    switch (u->menu_tela) {
+    case TELA_SOM:
+        if (u->menu_curso == 0) {
+            int p = dsp_preset() + delta;
+
+            if (p < 0) {
+                p = WM_PRESET_TOTAL - 1;
+            }
+            if (p >= WM_PRESET_TOTAL) {
+                p = 0;
+            }
+            dsp_aplicar_preset(p);
+            salvar_eq();
+        } else if (u->menu_curso == 1) {
+            dsp_set_preamp(dsp_preamp() + (float) delta);
+            wm_settings_set_int("preamp", (int) dsp_preamp());
+            wm_settings_save();
+        }
+        break;
+    case TELA_EQ:
+        if (u->menu_curso < WM_EQ_BANDAS) {
+            dsp_set_banda(u->menu_curso, dsp_banda(u->menu_curso) + (float) delta);
+            salvar_eq();
+        }
+        break;
+    case TELA_RELOGIO:
+        ajustar_relogio(u, delta);
+        break;
+    case TELA_TEMA:
+        {
+            int t = tema_atual_id() + delta;
+
+            if (t < 0) {
+                t = WM_TEMA_TOTAL - 1;
+            }
+            if (t >= WM_TEMA_TOTAL) {
+                t = 0;
+            }
+            tema_set(t);
+        }
+        break;
+    case TELA_IDIOMA:
+        {
+            int l = wm_lang() + delta;
+
+            if (l < 0) {
+                l = WM_LANG_TOTAL - 1;
+            }
+            if (l >= WM_LANG_TOTAL) {
+                l = 0;
+            }
+            wm_lang_set(l);
+            u->menu_curso = l;
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+/* Diálogo de confirmação: 0 = cancelar, 1 = desligar/reiniciar. */
 static int ativar_dialogo(Ui *u)
 {
     int escolha = u->dialogo_item;
+    bool reiniciar = u->dialogo_reiniciar;
 
     u->dialogo_aberto = false;
     u->menu_aberto = false;
-    return escolha == 1 ? WM_ACAO_DESLIGAR : WM_ACAO_NENHUMA;
+    if (escolha != 1) {
+        return WM_ACAO_NENHUMA;
+    }
+    return reiniciar ? WM_ACAO_REINICIAR : WM_ACAO_DESLIGAR;
 }
+
+/* --------------------------------------------------------------- teclas --- */
 
 int ui_handle_key(Ui *u, const struct KeyEvent *ev)
 {
     int acao = WM_ACAO_NENHUMA;
-    int n = itens_da_aba(u);
+    int n;
 
     if (ev->soltou) {
         return WM_ACAO_NENHUMA;
@@ -1412,7 +2399,7 @@ int ui_handle_key(Ui *u, const struct KeyEvent *ev)
         /* Com menu/diálogo aberto, apagar a tela esconderia o diálogo: fecha. */
         if (u->dialogo_aberto || u->menu_aberto) {
             fechar_menu(u);
-            return WM_ACAO_NENHUMA;
+            return WM_ACAO_TELA_ACENDER;
         }
         u->tela_apagada = true;
         return WM_ACAO_TELA_APAGAR;
@@ -1420,8 +2407,7 @@ int ui_handle_key(Ui *u, const struct KeyEvent *ev)
     if (ev->key == WM_KEY_POWER_LONGO) {
         u->tela_apagada = false;
         u->menu_aberto = false;
-        u->dialogo_aberto = true;
-        u->dialogo_item = 1;
+        abrir_dialogo(u, false);
         return WM_ACAO_TELA_ACENDER;
     }
 
@@ -1458,56 +2444,11 @@ int ui_handle_key(Ui *u, const struct KeyEvent *ev)
         return WM_ACAO_NENHUMA;
     }
 
-    /* Menu de configurações: idem. */
-    if (u->menu_aberto) {
-        switch (ev->key) {
-        case WM_KEY_CIMA:
-            u->menu_item = (u->menu_item + MENU_ITENS - 1) % MENU_ITENS;
-            break;
-        case WM_KEY_BAIXO:
-            u->menu_item = (u->menu_item + 1) % MENU_ITENS;
-            break;
-        case WM_KEY_ESQ:
-            if (u->menu_item == MENU_BRILHO) {
-                ajustar_brilho(u, -5);
-                return WM_ACAO_BRILHO;
-            }
-            break;
-        case WM_KEY_DIR:
-            if (u->menu_item == MENU_BRILHO) {
-                ajustar_brilho(u, 5);
-                return WM_ACAO_BRILHO;
-            }
-            break;
-        case WM_KEY_OK:
-        case WM_KEY_ENTER:
-            return ativar_item_menu(u);
-        case WM_KEY_VOLTAR:
-        case WM_KEY_MENU:
-            fechar_menu(u);
-            break;
-        case WM_KEY_VOL_MAIS:
-            u->quer_volume = audio_volume(u->audio) + 5;
-            u->tem_quer_volume = true;
-            break;
-        case WM_KEY_VOL_MENOS:
-            u->quer_volume = audio_volume(u->audio) - 5;
-            u->tem_quer_volume = true;
-            break;
-        default:
-            break;
-        }
-        return WM_ACAO_NENHUMA;
-    }
-
-    /* SELECT abre as configurações em qualquer aba. */
-    if (ev->key == WM_KEY_MENU) {
-        abrir_menu(u);
-        return WM_ACAO_NENHUMA;
-    }
-
+    /* Teclado na tela antes do menu: ele é aberto DE DENTRO do submenu de Wi-Fi,
+     * e com o menu na frente as teclas nunca chegariam ao teclado. */
     if (u->teclado_aberto) {
         int total = total_teclas();
+
         switch (ev->key) {
         case WM_KEY_ESQ:
             u->cursor_tecla = (u->cursor_tecla - 1 + total) % total;
@@ -1534,7 +2475,97 @@ int ui_handle_key(Ui *u, const struct KeyEvent *ev)
         return WM_ACAO_NENHUMA;
     }
 
-    if (u->video_tela_cheia) {
+    /* Menu de configurações: tem o foco. A raiz navega em vertical; os
+     * submenus usam ◀▶ para mudar valor e A para confirmar. */
+    if (u->menu_aberto) {
+        int linhas = submenu_linhas(u, u->menu_tela);
+
+        if (ev->key == WM_KEY_VOL_MAIS) {
+            u->quer_volume = audio_volume(u->audio) + 5;
+            u->tem_quer_volume = true;
+            return WM_ACAO_NENHUMA;
+        }
+        if (ev->key == WM_KEY_VOL_MENOS) {
+            u->quer_volume = audio_volume(u->audio) - 5;
+            u->tem_quer_volume = true;
+            return WM_ACAO_NENHUMA;
+        }
+
+        if (u->menu_tela == TELA_RAIZ) {
+            switch (ev->key) {
+            case WM_KEY_CIMA:
+                u->menu_item = (u->menu_item + MENU_ITENS - 1) % MENU_ITENS;
+                break;
+            case WM_KEY_BAIXO:
+                u->menu_item = (u->menu_item + 1) % MENU_ITENS;
+                break;
+            case WM_KEY_ESQ:
+                if (u->menu_item == MENU_BRILHO) {
+                    ajustar_brilho(u, -5);
+                    return WM_ACAO_BRILHO;
+                }
+                break;
+            case WM_KEY_DIR:
+                if (u->menu_item == MENU_BRILHO) {
+                    ajustar_brilho(u, 5);
+                    return WM_ACAO_BRILHO;
+                }
+                break;
+            case WM_KEY_OK:
+            case WM_KEY_ENTER:
+                return ativar_item_menu(u);
+            case WM_KEY_VOLTAR:
+            case WM_KEY_MENU:
+                fechar_menu(u);
+                break;
+            default:
+                break;
+            }
+            return WM_ACAO_NENHUMA;
+        }
+
+        switch (ev->key) {
+        case WM_KEY_CIMA:
+            if (linhas > 0) {
+                u->menu_curso = (u->menu_curso + linhas - 1) % linhas;
+            }
+            break;
+        case WM_KEY_BAIXO:
+            if (linhas > 0) {
+                u->menu_curso = (u->menu_curso + 1) % linhas;
+            }
+            break;
+        case WM_KEY_ESQ:
+            ajustar_submenu(u, -1);
+            break;
+        case WM_KEY_DIR:
+            ajustar_submenu(u, 1);
+            break;
+        case WM_KEY_OK:
+        case WM_KEY_ENTER:
+            return ativar_submenu(u);
+        case WM_KEY_VOLTAR:
+            voltar_submenu(u);
+            break;
+        case WM_KEY_MENU:
+            fechar_menu(u);
+            break;
+        default:
+            break;
+        }
+        return WM_ACAO_NENHUMA;
+    }
+
+    /* SELECT abre as configurações em qualquer aba. */
+    if (ev->key == WM_KEY_MENU) {
+        abrir_menu(u);
+        return WM_ACAO_NENHUMA;
+    }
+
+    /* Tela cheia só vale na aba de vídeos: trocar de aba (L/R) sai dela. Sem
+     * esta checagem a UI ficava "presa" em tela cheia e nenhuma tecla da nova
+     * aba funcionava (o estado continuava ligado). */
+    if (u->video_tela_cheia && u->aba == ABA_VIDEOS) {
         switch (ev->key) {
         case WM_KEY_VOLTAR:
         case WM_KEY_ABA_ANT:
@@ -1581,38 +2612,43 @@ int ui_handle_key(Ui *u, const struct KeyEvent *ev)
         return WM_ACAO_NENHUMA;
     }
 
+    n = itens_da_aba(u);
+
     switch (ev->key) {
     case WM_KEY_ABA_PROX:
         u->aba = (u->aba + 1) % TELAS;
         u->foco = FOCO_LISTA;
         u->cursor_tecla = 0;
         u->topo_lista = 0;
-        break;
+        return WM_ACAO_NENHUMA;
     case WM_KEY_ABA_ANT:
         u->aba = (u->aba - 1 + TELAS) % TELAS;
         u->foco = FOCO_LISTA;
         u->cursor_tecla = 0;
         u->topo_lista = 0;
-        break;
+        return WM_ACAO_NENHUMA;
     case WM_KEY_VOLTAR:
-        acao = WM_ACAO_SAIR;
-        break;
+        /* B na Biblioteca com o álbum aberto volta para a lista de álbuns; nas
+         * outras telas, sai do app. */
+        if (u->aba == ABA_BIBLIOTECA && u->bib_aberto) {
+            u->bib_aberto = false;
+            u->cursor_tecla = 0;
+            return WM_ACAO_NENHUMA;
+        }
+        return WM_ACAO_SAIR;
     case WM_KEY_TOCAR_PAUSAR:
         u->quer_toggle = true;
-        break;
+        return WM_ACAO_NENHUMA;
     case WM_KEY_VOL_MAIS:
         u->quer_volume = audio_volume(u->audio) + 5;
         u->tem_quer_volume = true;
-        break;
+        return WM_ACAO_NENHUMA;
     case WM_KEY_VOL_MENOS:
         u->quer_volume = audio_volume(u->audio) - 5;
         u->tem_quer_volume = true;
-        break;
+        return WM_ACAO_NENHUMA;
     default:
         break;
-    }
-    if (acao != WM_ACAO_NENHUMA) {
-        return acao;
     }
 
     switch (u->aba) {
@@ -1653,7 +2689,7 @@ int ui_handle_key(Ui *u, const struct KeyEvent *ev)
             break;
         case WM_KEY_DIR:
             if (u->foco == FOCO_CONTROLES) {
-                if (u->foco_botao < 3) {
+                if (u->foco_botao < 4) {
                     u->foco_botao++;
                 }
             } else if (colunas > 1 && u->cursor_tecla + 1 < n) {
@@ -1663,7 +2699,9 @@ int ui_handle_key(Ui *u, const struct KeyEvent *ev)
         case WM_KEY_OK:
         case WM_KEY_ENTER:
             if (u->foco == FOCO_CONTROLES) {
-                /* 0 = anterior, 1 = play/pause, 2 = próximo, 3 = parar */
+                /* 0 = anterior, 1 = play/pause, 2 = próximo, 3 = parar,
+                 * 4 = modo de reprodução (em ordem / repetir álbum / repetir
+                 * faixa / aleatório). */
                 switch (u->foco_botao) {
                 case 0:
                     u->quer_toggle = true;   /* anterior é tratado no main */
@@ -1675,12 +2713,15 @@ int ui_handle_key(Ui *u, const struct KeyEvent *ev)
                 case 2:
                     u->quer_proximo = true;
                     break;
-                default:
+                case 3:
                     u->quer_parar = true;
+                    break;
+                default:
+                    ui_set_modo(u, (u->modo + 1) % WM_MODO_TOTAL);
                     break;
                 }
             } else {
-                pedir_tocar(u);
+                pedir_tocar(u, false);
             }
             break;
         /* L1/R1: na música salta de faixa; na grade, pula uma página. */
@@ -1721,37 +2762,87 @@ int ui_handle_key(Ui *u, const struct KeyEvent *ev)
         }
         break;
     }
-    case ABA_RADIO:
-        switch (ev->key) {
-        case WM_KEY_CIMA:
-            if (u->cursor_tecla > 0) {
-                u->cursor_tecla--;
-            }
-            break;
-        case WM_KEY_BAIXO:
-            if (u->cursor_tecla + 1 < u->n_redes) {
-                u->cursor_tecla++;
-            }
-            break;
-        case WM_KEY_OK:
-        case WM_KEY_ENTER:
-            if (u->cursor_tecla < u->n_redes) {
-                struct Rede *rede = &u->redes[u->cursor_tecla];
-                if (rede->seguranca[0] && wm_casecmp(rede->seguranca, "aberta") != 0) {
-                    abrir_teclado(u, rede->ssid);
-                } else {
-                    radio_conectar_wifi(u->radio, rede->ssid, "");
+    case ABA_BIBLIOTECA:
+        /* Fechada: o cursor anda pelos ÁLBUNS. Aberta: pelas faixas. */
+        if (!u->bib_aberto) {
+            switch (ev->key) {
+            case WM_KEY_CIMA:
+                if (u->bib_album > 0) {
+                    u->bib_album--;
                 }
+                break;
+            case WM_KEY_BAIXO:
+                if (u->bib_album + 1 < u->n_albuns) {
+                    u->bib_album++;
+                }
+                break;
+            case WM_KEY_OK:
+            case WM_KEY_ENTER:
+                pedir_tocar(u, false);   /* abre o álbum */
+                break;
+            case WM_KEY_PULO_PROX:
+            case WM_KEY_PG_BAIXO:
+                u->bib_album += 5;
+                if (u->bib_album >= u->n_albuns) {
+                    u->bib_album = u->n_albuns > 0 ? u->n_albuns - 1 : 0;
+                }
+                break;
+            case WM_KEY_PULO_ANT:
+            case WM_KEY_PG_CIMA:
+                u->bib_album -= 5;
+                if (u->bib_album < 0) {
+                    u->bib_album = 0;
+                }
+                break;
+            default:
+                break;
             }
-            break;
-        case WM_KEY_MENU:
-            radio_scan_wifi(u->radio);
-            break;
-        case WM_KEY_PG_BAIXO:
-            radio_bt_scan(u->radio);
-            break;
-        default:
-            break;
+        } else {
+            int faixas = u->alb_n[u->bib_album];
+
+            switch (ev->key) {
+            case WM_KEY_CIMA:
+                if (u->bib_faixa > 0) {
+                    u->bib_faixa--;
+                }
+                break;
+            case WM_KEY_BAIXO:
+                if (u->bib_faixa + 1 < faixas) {
+                    u->bib_faixa++;
+                }
+                break;
+            case WM_KEY_OK:
+            case WM_KEY_ENTER:
+                u->cursor_tecla = u->bib_faixa;
+                pedir_tocar(u, false);
+                break;
+            case WM_KEY_ESQ:
+                /* ◀ volta para a lista de álbuns (o mesmo que B). */
+                u->bib_aberto = false;
+                u->cursor_tecla = 0;
+                break;
+            case WM_KEY_PULO_PROX:
+                u->quer_proximo = true;
+                break;
+            case WM_KEY_PULO_ANT:
+                u->quer_anterior = true;
+                break;
+            case WM_KEY_PG_BAIXO:
+                u->bib_faixa += 5;
+                if (u->bib_faixa >= faixas) {
+                    u->bib_faixa = faixas > 0 ? faixas - 1 : 0;
+                }
+                break;
+            case WM_KEY_PG_CIMA:
+                u->bib_faixa -= 5;
+                if (u->bib_faixa < 0) {
+                    u->bib_faixa = 0;
+                }
+                break;
+            default:
+                break;
+            }
+            u->cursor_tecla = u->bib_faixa;
         }
         break;
     case ABA_SISTEMA:
@@ -1771,7 +2862,38 @@ int ui_handle_key(Ui *u, const struct KeyEvent *ev)
     return acao;
 }
 
+int ui_modo(const Ui *u)
+{
+    return u ? u->modo : WM_MODO_SEQUENCIAL;
+}
+
+void ui_set_modo(Ui *u, int modo)
+{
+    if (!u) {
+        return;
+    }
+    if (modo < 0 || modo >= WM_MODO_TOTAL) {
+        modo = WM_MODO_SEQUENCIAL;
+    }
+    u->modo = modo;
+    wm_settings_set_int("modo", modo);
+    wm_settings_save();
+}
+
 /* ------------------------------------------------------------- ligação --- */
+
+/* Fontes de reserva por alfabeto. DejaVu é a primária; estas cobrem o que ela
+ * não tem. O pacote é fonts-noto-core (árabe, devanágari, bengali) mais
+ * fonts-wqy-zenhei para o chinês — ~58 MB, contra ~100 MB do fonts-noto-cjk. */
+static const char *const FONTES_RESERVA[] = {
+    "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSansDevanagari-Regular.ttf",
+    "/usr/share/fonts/truetype/noto/NotoSansBengali-Regular.ttf",
+    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+    NULL
+};
 
 Ui *ui_create(Canvas *canvas, Library *lib, AudioOut *audio)
 {
@@ -1782,6 +2904,7 @@ Ui *ui_create(Canvas *canvas, Library *lib, AudioOut *audio)
         "/usr/share/fonts/TTF/DejaVuSans.ttf",
         NULL
     };
+    Font **fontes[5];
     const char *fonte = NULL;
     bool compacto;
 
@@ -1792,6 +2915,7 @@ Ui *ui_create(Canvas *canvas, Library *lib, AudioOut *audio)
     u->lib = lib;
     u->audio = audio;
     compacto = canvas->w < 900;
+    u->modo = WM_MODO_SEQUENCIAL;
 
     for (int i = 0; caminhos_fonte[i]; i++) {
         if (access(caminhos_fonte[i], R_OK) == 0) {
@@ -1808,7 +2932,40 @@ Ui *ui_create(Canvas *canvas, Library *lib, AudioOut *audio)
         u->f_pequeno = font_open(fonte, compacto ? 11 : 13);
         u->f_numero = font_open(fonte, compacto ? 11 : 13);
     }
+
+    fontes[0] = &u->f_titulo;
+    fontes[1] = &u->f_grande;
+    fontes[2] = &u->f_texto;
+    fontes[3] = &u->f_pequeno;
+    fontes[4] = &u->f_numero;
+    for (int i = 0; i < 5; i++) {
+        if (!*fontes[i]) {
+            continue;
+        }
+        for (int r = 0; FONTES_RESERVA[r]; r++) {
+            if (access(FONTES_RESERVA[r], R_OK) == 0) {
+                font_add_fallback(*fontes[i], FONTES_RESERVA[r]);
+            }
+        }
+    }
+
+    /* Ajustes que o app grava em /boot/walkmam-media.conf. O idioma e o tema
+     * precisam valer ANTES do primeiro desenho; o EQ e o modo podem vir depois,
+     * mas são baratos e ficam aqui. */
+    wm_settings_load();
+    wm_lang_set(wm_lang_from_code(wm_settings_get("idioma", "pt")));
+    tema_set(tema_por_codigo(wm_settings_get("tema", "neon")));
+    u->modo = wm_settings_get_int("modo", WM_MODO_SEQUENCIAL);
+    if (u->modo < 0 || u->modo >= WM_MODO_TOTAL) {
+        u->modo = WM_MODO_SEQUENCIAL;
+    }
+    carregar_eq();
+    if (wm_settings_get_int("neural", 0) && dsp_neural_disponivel()) {
+        dsp_set_neural(true);
+    }
+
     u->n_redes = 0;
+    u->bib_album = 0;
     return u;
 }
 
@@ -1840,6 +2997,9 @@ void ui_update_system(Ui *u, const struct SystemInfo *sys)
     }
     u->sys = *sys;
     u->n_redes = radio_redes(u->radio, u->redes, 32);
+    u->n_bt_devs = sys->bt_presente
+                       ? radio_bt_dispositivos(u->radio, u->bt_devs, BT_DEV_MAX)
+                       : 0;
     /* As listas só mudam quando uma varredura termina: comparar a versão evita
      * percorrer a biblioteca a cada segundo. */
     {
@@ -1988,13 +3148,13 @@ const char *ui_step_track(Ui *u, int delta)
     static char escolhido[WM_PATH_MAX];
     struct MediaItem item;
     int atual = -1;
-    int n = itens_da_aba(u);
+    int n = faixas_da_aba(u);
 
     if (!u || n <= 0) {
         return NULL;
     }
     for (int i = 0; i < n; i++) {
-        if (item_da_aba(u, i, &item) && u->tocando_path[0]
+        if (faixa_da_aba(u, i, &item) && u->tocando_path[0]
             && strcmp(item.caminho, u->tocando_path) == 0) {
             atual = i;
             break;
@@ -2004,7 +3164,7 @@ const char *ui_step_track(Ui *u, int delta)
         atual = u->cursor_tecla;
     }
     atual = (atual + delta % n + n) % n;
-    if (!item_da_aba(u, atual, &item)) {
+    if (!faixa_da_aba(u, atual, &item)) {
         return NULL;
     }
     snprintf(escolhido, sizeof(escolhido), "%s", item.caminho);

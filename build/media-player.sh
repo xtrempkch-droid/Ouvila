@@ -98,6 +98,8 @@ add_inc() {
 add_inc "$BASE_INC"
 add_inc "$BASE_INC/libdrm"
 add_inc "$BASE_INC/freetype2"
+# HarfBuzz (shaping dos alfabetos árabe/índico/chinês) fica em harfbuzz/.
+add_inc "$BASE_INC/harfbuzz"
 add_inc "$BASE_INC/$TRIPLE_FOR_INC"
 
 # pkg-config é a fonte oficial dos caminhos quando os -dev estão instalados
@@ -108,9 +110,10 @@ add_inc "$BASE_INC/$TRIPLE_FOR_INC"
 # tem (drm.h, ft2build.h) e falharam os que só existem no sysroot.
 if [ "$MODO" = "native" ] && command -v pkg-config >/dev/null 2>&1; then
     if pkg-config --exists libavformat libavcodec libavutil libswscale \
-            libswresample alsa freetype2 libdrm 2>/dev/null; then
+            libswresample alsa freetype2 libdrm harfbuzz 2>/dev/null; then
         for extra in $(pkg-config --cflags libavformat libavcodec libavutil \
-                            libswscale libswresample alsa freetype2 libdrm); do
+                            libswscale libswresample alsa freetype2 libdrm \
+                            harfbuzz); do
             case " $SYSROOT_INC " in
                 *" $extra "*) ;;
                 *) SYSROOT_INC="${SYSROOT_INC:+$SYSROOT_INC }$extra" ;;
@@ -119,7 +122,7 @@ if [ "$MODO" = "native" ] && command -v pkg-config >/dev/null 2>&1; then
     fi
 fi
 
-LINK=(-lavformat -lavcodec -lavutil -lswscale -lswresample -lasound -lfreetype -ldrm -lpthread -lm)
+LINK=(-lavformat -lavcodec -lavutil -lswscale -lswresample -lasound -lfreetype -lharfbuzz -ldrm -lpthread -lm)
 if [ "$MODO" = "native" ]; then
     if [ -n "${WM_SYSROOT:-}" ]; then
         # Só o triple do HOST: um sysroot arm64 aqui faria o ld pegar
@@ -167,13 +170,14 @@ fi
 # de compilador não deve quebrar a imagem; mas os avisos aparecem no log.
 CFLAGS=(-std=c11 -O2 -Wall -Wextra -Wno-unused-parameter)
 
-FONTES=(audio.c decoder.c drm.c font.c gfx.c input.c library.c main.c radio.c ui.c util.c)
+FONTES=(audio.c decoder.c dsp.c drm.c font.c gfx.c i18n.c input.c library.c main.c
+        radio.c tema.c ui.c util.c)
 
 # Cada cabeçalho obrigatório é testado isoladamente: se faltar, o erro diz qual
 # pacote instalar em vez de "fatal error" no meio de um arquivo qualquer.
 FALTA_H=0
 ERRO_H=/tmp/wm-hcheck.$$.log
-for h in drm.h xf86drmMode.h ft2build.h alsa/asoundlib.h \
+for h in drm.h xf86drmMode.h ft2build.h harfbuzz/hb-ft.h alsa/asoundlib.h \
          libavformat/avformat.h libavcodec/avcodec.h \
          libswscale/swscale.h libswresample/swresample.h; do
     if ! printf '#include <%s>\n' "$h" | "$CC" $SYSROOT_INC -x c -fsyntax-only - >"$ERRO_H" 2>&1; then
@@ -193,7 +197,7 @@ rm -f "$ERRO_H"
 if [ "$FALTA_H" -gt 0 ]; then
     echo "!!! $FALTA_H cabecalho(s) com problema. Pacotes: libdrm-dev libfreetype-dev" >&2
     echo "!!! libasound2-dev libavformat-dev libavcodec-dev libavutil-dev" >&2
-    echo "!!! libswscale-dev libswresample-dev" >&2
+    echo "!!! libswscale-dev libswresample-dev libharfbuzz-dev" >&2
     echo "!!! flags usadas: $SYSROOT_INC" >&2
     exit 1
 fi
@@ -220,7 +224,7 @@ fi
 
 mkdir -p "$(dirname -- "$OUT")"
 "$CC" "${CFLAGS[@]}" $SYSROOT_INC \
-    -DWM_VERSION='"1.0.0"' \
+    -DWM_VERSION='"1.1.0"' \
     -o "$OUT" "${FONTES[@]/#/$SRC_DIR/}" \
     "${LINK[@]}"
 

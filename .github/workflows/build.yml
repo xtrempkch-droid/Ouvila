@@ -73,6 +73,7 @@ jobs:
         sudo apt-get install -y --no-install-recommends \
           libavformat-dev libavcodec-dev libavutil-dev libswscale-dev \
           libswresample-dev libdrm-dev libasound2-dev libfreetype-dev \
+          libharfbuzz-dev \
           gstreamer1.0-tools gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly
         ./build/media-player.sh --native
         bash tools/test-media-player.sh build/walkmam-media
@@ -1026,7 +1027,7 @@ jobs:
           echo "--> [media-player] Conferindo as bibliotecas que o app usa..."
           if ! sudo chroot rootfs sh -c '
                 for lib in libavformat libavcodec libavutil libswresample \
-                           libswscale libdrm libasound libfreetype; do
+                           libswscale libdrm libasound libfreetype libharfbuzz; do
                   if ! ldconfig -p | grep -q "$lib\."; then
                     echo "faltando: $lib" >&2
                     exit 1
@@ -1034,6 +1035,15 @@ jobs:
                 done
                 [ -r /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf ] || {
                   echo "faltando a fonte DejaVuSans.ttf" >&2; exit 1; }
+                # Alfabetos que o app promete na tela de idioma: sem estas
+                # fontes o texto sai como quadradinho vazio.
+                for f in noto/NotoSansArabic-Regular.ttf \
+                         noto/NotoSansDevanagari-Regular.ttf \
+                         noto/NotoSansBengali-Regular.ttf \
+                         wqy/wqy-zenhei.ttc; do
+                  [ -r "/usr/share/fonts/truetype/$f" ] || {
+                    echo "faltando a fonte $f" >&2; exit 1; }
+                done
               '; then
             echo "!!! bibliotecas/fonte do media-player ausentes no rootfs" >&2
             exit 1
