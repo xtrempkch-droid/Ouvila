@@ -255,7 +255,38 @@ display_transform=$DISPLAY_TRANSFORM
 # retroarch_exit: o que fazer quando o RetroArch é fechado pelo menu (o 1.14
 # não tem item de desligar). poweroff = desliga o aparelho; stay = só sai.
 retroarch_exit=poweroff
+# --- variante media-player (app de mídia único) ---
+# media_volume: volume inicial (0..100)
+# media_audio_out: dispositivo ALSA ("default", "hw:0,0") ou "-" para desligar
+# media_roots: pastas de mídia separadas por ':'
+# media_exit: o que fazer quando a UI termina (poweroff ou stay)
+media_volume=70
+media_audio_out=default
+media_roots=/storage/media:/boot/media:/storage/sdcard1/media:/storage/sdcard2/media
+media_exit=poweroff
 CONF
+
+# Mídia na partição FAT: é o único lugar que se lê de um PC sem rede.
+if [[ $VARIANT == media-player ]]; then
+    mkdir -p "$BOOT_MOUNT/media/music" "$BOOT_MOUNT/media/videos"
+    cat > "$BOOT_MOUNT/media/LEIA-ME.txt" << 'LEIAME'
+MÍDIA: copie as pastas aqui na partição BOOT (no PC), assim:
+  media/music/    suas músicas (mp3, flac, ogg, m4a, wav...)
+  media/videos/   seus vídeos  (mp4, mkv, webm, avi...)
+
+A ordem que o app procura (a primeira que existir manda):
+  /storage/media   (ext4, via Wi-Fi + scp — melhor para muita coisa)
+  /boot/media      (esta pasta: lê no PC, sem precisar de rede)
+  /storage/sdcard1/media e /storage/sdcard2/media (cartão de dados)
+
+Tags: ID3v2/ID3v1 (mp3) e Vorbis comment (flac) são lidas; sem tag ele usa
+"Artista - Título.mp3". A capa é folder.jpg/cover.png na pasta do álbum.
+
+Limite: esta partição tem 128 MB no total (kernel e dtbs ocupam parte).
+
+Controle: A abre, B volta, L/R trocam de aba, X toca/pausa, Y menu.
+LEIAME
+fi
 
 X35S_DTB="$KERNEL_DIR/arch/arm64/boot/dts/rockchip/rk3566-powkiddy-x35s.dtb"
 if [[ $DEVICE == powkiddy-x35s && $(basename -- "$DTB_FILE") == rocknix-official-x35s.dtb ]]; then

@@ -9,22 +9,23 @@ on:
     # Tag "v*" constrói a variante padrão (kodi) e publica um Release com o nome
     # da tag. Qualquer tag que também corresponda a "v*" vira release; as tags
     # "retroarch-*" também (ver os passos de publicação no fim do job).
-    tags: [ "v*", "retroarch-*" ]
+    tags: [ "v*", "retroarch-*", "media-player-*" ]
   workflow_dispatch:
     inputs:
       variant:
-        description: "Variante da imagem (kodi = multimidia, retroarch = jogos)"
+        description: "Variante da imagem (kodi = multimidia, retroarch = jogos, media-player = app de midia unico)"
         type: choice
         options:
           - kodi
           - retroarch
+          - media-player
         default: kodi
 
 # A variante escolhe quais pacotes/serviços entram no rootfs e o nome do
 # artefato. Push na main constrói a padrão (kodi) para não quebrar o fluxo
 # que já é usado para testar no aparelho.
 env:
-  VARIANT: ${{ github.event.inputs.variant || (startsWith(github.ref, 'refs/tags/retroarch-') && 'retroarch') || 'kodi' }}
+  VARIANT: ${{ github.event.inputs.variant || (startsWith(github.ref, 'refs/tags/retroarch-') && 'retroarch') || (startsWith(github.ref, 'refs/tags/media-player-') && 'media-player') || 'kodi' }}
 
 # Um build por referencia: push novo na main cancela o anterior em vez de rodar
 # dois kernels em paralelo (cada run leva ~40 min e o runner e o mesmo). Tags
@@ -59,6 +60,23 @@ jobs:
 
     # Kernel mainline: rk3566-powkiddy-x55.dts existe a partir da tag v6.8.
     # Usamos uma tag estável recente que já contenha o suporte.
+    - name: Testes do app de midia (variante media-player)
+      # Roda ANTES de compilar o kernel: se a UI/biblioteca/decoder regredir, o
+      # build falha em ~2 min em vez de descobrir depois de 40 min.
+      #
+      # Por que compilar nativo aqui: os testes abrem mídia de verdade e
+      # desenham o canvas, então o binário precisa EXECUTAR no runner. O binário
+      # arm64 é validado no passo do rootfs, rodando dentro dele com qemu.
+      if: env.VARIANT == 'media-player'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          libavformat-dev libavcodec-dev libavutil-dev libswscale-dev \
+          libswresample-dev libdrm-dev libasound2-dev libfreetype-dev \
+          gstreamer1.0-tools gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly
+        ./build/media-player.sh --native
+        bash tools/test-media-player.sh build/walkmam-media
+
     - name: Fetch Sources (Mainline U-Boot, Mainline Kernel & RKBIN)
       run: |
         # U-Boot fixado no commit que gerou a imagem validada (o master do denx
@@ -573,10 +591,14 @@ jobs:
     - name: Preflight da variante (falha em segundos, sem compilar)
       run: |
         echo "--> Variante: $VARIANT"
-        if [ "$VARIANT" != "kodi" ] && [ "$VARIANT" != "retroarch" ]; then
-          echo "!!! variante desconhecida: $VARIANT" >&2
-          exit 1
-        fi
+        case "$VARIANT" in
+          kodi|retroarch|media-player) ;;
+          *)
+            echo "!!! variante desconhecida: $VARIANT" >&2
+            echo "!!! validas: kodi, retroarch, media-player" >&2
+            exit 1
+            ;;
+        esac
         LISTA="variants/$VARIANT/packages/$VARIANT.list"
         if [ ! -f "$LISTA" ]; then
           echo "!!! manifesto de pacotes ausente: $LISTA" >&2
@@ -622,6 +644,32 @@ jobs:
              "variants/retroarch/overlay/root/.config/retroarch/autoconfig/udev/Rocknix_Gamepad.cfg" ]; then
           echo "!!! perfil de controle (autoconfig) ausente: sem ele o joypad nao responde" >&2
           exit 1
+        fi
+
+        # A variante media-player é um binário C compilado no runner a partir de
+        # variants/media-player/src. O preflight confere as fontes aqui (segundos)
+        # em vez de descobrir no meio do build do kernel.
+        if [ "$VARIANT" = "media-player" ]; then
+          for f in variants/media-player/src/*.c variants/media-player/src/*.h; do
+            if [ ! -s "$f" ]; then
+              echo "!!! fonte ausente ou vazia: $f" >&2
+              exit 1
+            fi
+          done
+          if [ ! -x build/media-player.sh ]; then
+            echo "!!! build/media-player.sh ausente ou sem permissao" >&2
+            exit 1
+          fi
+          for f in \
+            variants/media-player/overlay/etc/systemd/system/media-player.service \
+            variants/media-player/overlay/usr/local/bin/start-media-player.sh \
+          ; do
+            if [ ! -e "$f" ]; then
+              echo "!!! esperado e nao encontrado: $f" >&2
+              exit 1
+            fi
+          done
+          echo "--> ok: fontes e overlay do media-player presentes"
         fi
         echo "--> ok: arquivos da variante presentes"
 
@@ -958,6 +1006,87 @@ jobs:
           sudo chroot rootfs systemctl enable retroarch.service
         fi
 
+
+        if [ "$VARIANT" = "media-player" ]; then
+          echo "--> [media-player] App de midia unico (DRM/KMS + FFmpeg + ALSA)."
+          echo "--> Nao ha Weston, navegador nem mpv: o binario walkmam-media e a"
+          echo "--> camada inteira. As bibliotecas vem do manifesto da variante."
+          LISTA=variants/media-player/packages/media-player.list
+          PACOTES=$(sed -e 's/#.*//' -e 's/[[:space:]]//g' "$LISTA" | grep -v '^$' | tr '\n' ' ')
+          echo "--> pacotes: $PACOTES"
+          sudo chroot rootfs bash -c '
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get install -y --no-install-recommends '"$PACOTES"'
+            apt-get clean
+            rm -rf /var/lib/apt/lists/*
+          '
+          # Conferir o runtime de verdade: se faltar uma biblioteca, o binario
+          # so falharia no aparelho, com "error while loading shared libraries".
+          echo "--> [media-player] Conferindo as bibliotecas que o app usa..."
+          if ! sudo chroot rootfs sh -c '
+                for lib in libavformat libavcodec libavutil libswresample \
+                           libswscale libdrm libasound libfreetype; do
+                  if ! ldconfig -p | grep -q "$lib\."; then
+                    echo "faltando: $lib" >&2
+                    exit 1
+                  fi
+                done
+                [ -r /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf ] || {
+                  echo "faltando a fonte DejaVuSans.ttf" >&2; exit 1; }
+              '; then
+            echo "!!! bibliotecas/fonte do media-player ausentes no rootfs" >&2
+            exit 1
+          fi
+          echo "--> ok: bibliotecas e fonte presentes"
+
+          echo "--> [media-player] Compilando o app (cross arm64, headers do bookworm)..."
+          echo "--> Os cabecalhos vem dos pacotes arm64 do proprio bookworm: e o"
+          echo "--> que garante que o codigo compila contra o FFmpeg 5.1 da imagem"
+          echo "--> (e nao contra a versao do runner)."
+          SYSROOT=/tmp/wm-sysroot
+          rm -rf "$SYSROOT"
+          mkdir -p "$SYSROOT"
+          curl -fsSL http://deb.debian.org/debian/dists/bookworm/main/binary-arm64/Packages.gz \
+            -o /tmp/wm-pkgs.gz
+          gzip -dc /tmp/wm-pkgs.gz > /tmp/wm-pkgs.txt
+          for p in libavformat-dev libavcodec-dev libavutil-dev libswscale-dev \
+                   libswresample-dev libdrm-dev libasound2-dev libfreetype-dev; do
+            url=$(grep -A 30 "^Package: $p$" /tmp/wm-pkgs.txt \
+                    | sed -n 's/^Filename: //p' | head -1)
+            if [ -z "$url" ]; then
+              echo "!!! $p nao encontrado no indice arm64 do bookworm" >&2
+              exit 1
+            fi
+            curl -fsSL -o "/tmp/$(basename "$url")" "http://deb.debian.org/debian/$url"
+            dpkg-deb -x "/tmp/$(basename "$url")" "$SYSROOT"
+          done
+          WM_SYSROOT="$SYSROOT" WM_OUT=build/walkmam-media ./build/media-player.sh
+
+          echo "--> [media-player] Instalando o binario e o launcher..."
+          sudo install -D -m 0755 build/walkmam-media rootfs/usr/local/bin/walkmam-media
+          sudo install -D -m 0755 \
+            variants/media-player/overlay/usr/local/bin/start-media-player.sh \
+            rootfs/usr/local/bin/start-media-player.sh
+          sudo install -D -m 0644 \
+            variants/media-player/overlay/etc/systemd/system/media-player.service \
+            rootfs/etc/systemd/system/media-player.service
+
+          echo "--> [media-player] Pastas de midia (FAT para copiar do PC, ext4 para scp)..."
+          echo "--> /boot/media: o unico lugar que se abre sem rede (a X35H tem o"
+          echo "--> USB sem dados, entao copiar midia pelo cartao e o caminho real)."
+          sudo mkdir -p rootfs/storage/media/music rootfs/storage/media/videos
+          sudo chroot rootfs systemctl enable media-player.service
+
+          echo "--> [media-player] Conferindo que o binario roda (qemu-arm64)..."
+          sudo cp /usr/bin/qemu-aarch64-static rootfs/usr/bin/ 2>/dev/null || true
+          if sudo chroot rootfs /usr/local/bin/walkmam-media --version; then
+            echo "--> ok: o binario executa e responde --version"
+          else
+            echo "!!! o binario nao executou no rootfs" >&2
+            exit 1
+          fi
+        fi
+
         echo "--> Instalando o painel web (Wi-Fi/Bluetooth) na porta 8088..."
         echo "--> O Kodi não gerencia rádio; o painel fica acessível em"
         echo "--> http://10.55.0.1:8088 (cabo) ou no IP do Wi-Fi, sem sair do Kodi."
@@ -1246,12 +1375,48 @@ jobs:
         # de desligar). "poweroff" desliga o aparelho; "stay" apenas sai do app,
         # util para depurar por SSH/serial.
         retroarch_exit=poweroff
+
+        # --- variante media-player (app de midia unico) ---
+        # media_volume: volume inicial (0..100).
+        # media_audio_out: dispositivo ALSA ("default", "hw:0,0") ou "-" para
+        #                  nao abrir o som (util para testar no PC).
+        # media_roots: pastas de midia separadas por ':'.
+        # media_exit: o que fazer quando a UI termina — poweroff (padrao) ou stay.
+        media_volume=70
+        media_audio_out=default
+        media_roots=/storage/media:/boot/media:/storage/sdcard1/media:/storage/sdcard2/media
+        media_exit=poweroff
         WALKMAMCONF
 
         # ROMs na partição FAT: é o ÚNICO lugar que se lê de um PC sem rede.
         # Essencial na X35H, onde o USB não ancora. Limite prático ~90 MB (o
         # resto vai para kernel/dtbs numa partição de 128 MB); para bibliotecas
         # grandes o caminho é Wi-Fi + scp para /storage/roms.
+        if [ "${VARIANT:-kodi}" = "media-player" ]; then
+          echo "--> Criando /media na particao FAT (copie musica/video por la, no PC)..."
+          mkdir -p /mnt/boot/media/music /mnt/boot/media/videos
+          cat << "LEIAME" > /mnt/boot/media/LEIA-ME.txt
+        MIDIA: copie as pastas aqui na particao BOOT (no PC), assim:
+          media/music/    suas musicas  (mp3, flac, ogg, m4a, wav...)
+          media/videos/   seus videos   (mp4, mkv, webm, avi...)
+
+        A ordem que o app procura (a primeira que existir manda):
+          /storage/media        (ext4, via Wi-Fi + scp — melhor para muita coisa)
+          /boot/media           (esta pasta: le no PC, sem precisar de rede)
+          /storage/sdcard1/media e /storage/sdcard2/media  (cartao de dados)
+
+        Tags de musica: ID3v2/ID3v1 (mp3) e Vorbis comment (flac) sao lidas; sem
+        tag ele usa "Artista - Titulo.mp3". A capa e folder.jpg/cover.png na
+        pasta do album.
+
+        Limite: esta particao tem 128 MB no total (kernel e dtbs ocupam parte).
+        Para biblioteca grande use o cartao de dados ou /storage/media.
+
+        Controle: A abre, B volta, L/R trocam de aba, X toca/pausa, Y menu.
+        LEIAME
+          echo "--> /media criado com LEIA-ME.txt"
+        fi
+
         if [ "${VARIANT:-kodi}" = "retroarch" ]; then
           echo "--> Criando /roms na partição FAT (copie ROMs por lá, no PC)..."
           mkdir -p /mnt/boot/roms

@@ -198,14 +198,19 @@ Fix (no CI): **gerar** o `rtl_bt/rtl8821cs_config.bin` com 25 bytes — assinatu
 
 Não troque esse arquivo por um renomeado do 8821C: volta a quebrar.
 
-### 4.4 Variantes: `kodi` (multimídia) e `retroarch` (jogos)
+### 4.4 Variantes: `kodi` (multimídia), `retroarch` (jogos) e `media-player`
 
-O mesmo kernel/DTB gera **duas imagens**. O que muda é o rootfs e o serviço do `tty1`.
+O mesmo kernel/DTB gera **três imagens**. O que muda é o rootfs e o serviço do `tty1`.
 A variante é escolhida no `workflow_dispatch` (input `variant`); **push na `main` constrói
 `kodi`**, que é o que se usa para testar no aparelho.
 
 * `variants/kodi/` — Kodi + Weston + add-on de rádio.
 * `variants/retroarch/` — RetroArch + cores + Weston, sem add-on (rádio pelo painel web).
+* `variants/media-player/` — **um binário em C** (`src/`, compilado por
+  `build/media-player.sh`): DRM/KMS + FFmpeg + ALSA + FreeType + evdev. **Não usa
+  Weston, WebKit/cog, mpv nem backend HTTP** — foi um pedido explícito do usuário
+  ("nada de usar outra camada já existente"). Abas: Música, **Vídeos** (tela cheia),
+  Rádio e Sistema. Nada disso foi testado em hardware ainda.
 
 Detalhes em [docs/variantes.md](docs/variantes.md). Pontos que custam tempo se esquecidos:
 
@@ -933,3 +938,70 @@ outro commit resolve sem force-push na branch. Para conferir se o build nasceu, 
 - **Pendente / próximo:** rodar `target=imagem` + `kernelSource=proprio` +
   `kernelVersion=v7.1` e gravar. Se ainda não ligar, **serial é obrigatório** —
   já eliminamos loader, DTB, overlay, cmdline e rootfs como suspeitos plausíveis.
+
+### 2026-11-01 — Copilot (variante `media-player`: app de mídia único em C)
+
+- **Pedido do usuário:** criar a variante `media-player` (a pasta já existia com 5
+  protótipos HTML em `layout/`, que são só referência visual). Na primeira versão eu
+  fiz Weston + `cog`/WebKit + `mpv` + backend HTTP em Python; o usuário **vetou**: "faça
+  desse um app de reprodução único. nada de usar outra camada já existente". Tudo foi
+  reescrito.
+- **O que é hoje:** um binário em C (`variants/media-player/src/`, ~5 mil linhas) que é a
+  camada inteira:
+  | Arquivo | Responsabilidade |
+  | --- | --- |
+  | `drm.c` | KMS: dumb buffer, page flip com vblank, **rotação por software**, `KD_GRAPHICS` no tty0 para o fbcon não brigar |
+  | `decoder.c` | libavformat/libavcodec/libswresample/libswscale, thread por arquivo, áudio como relógio, descarte de quadro atrasado |
+  | `audio.c` | ALSA S16 estéreo; `audio_write()` bloqueia e por isso **dita o ritmo**; volume pelo mixer + software |
+  | `gfx.c` / `font.c` | canvas XRGB8888 na CPU (cantos arredondados, gradiente) e texto com FreeType (cache de glifos) |
+  | `library.c` | varredura recursiva em segundo plano + tags ID3v2/ID3v1/Vorbis (lidas do arquivo, sem abrir o FFmpeg por faixa) |
+  | `input.c` | evdev do `rocknix-joypad` + teclado USB; analógico com auto-repeat |
+  | `radio.c` | estado do kernel + `nmcli`/`bluetoothctl` (os serviços que a imagem já tem) |
+  | `ui.c` | 4 abas: Música, **Vídeos (tela cheia)**, Rádio (com teclado na tela), Sistema |
+  | `main.c` | laço principal, bateria/brilho/uptime, desligar/reiniciar |
+- **Não usa:** Weston, X11, WebKit/cog, mpv, ffplay, SDL, Node, Python, servidor HTTP.
+- **Build:** `build/media-player.sh`. Cross `aarch64-linux-gnu-gcc` com os cabeçalhos
+  **arm64 do bookworm** (é o que garante compilar contra o FFmpeg 5.1 da imagem, e não
+  contra o do runner) e conferência de que o binário é `ARM aarch64`.
+- **CI:** a variante entrou no input do `workflow_dispatch`, no gatilho por tag
+  `media-player-*`, no Preflight (fontes/overlay presentes) e no bloco de rootfs
+  (instala bibliotecas do manifesto, confere `ldconfig` + fonte DejaVu, compila, instala
+  binário/launcher/serviço e roda `walkmam-media --version` **dentro do rootfs com
+  qemu**). O `walkmam.conf` ganhou `media_volume`, `media_audio_out`, `media_roots` e
+  `media_exit`; a imagem cria `/boot/media/{music,videos}` com LEIA-ME.
+- **Testado (sem hardware):** `tools/test-media-player.sh` → biblioteca (ID3v2, ID3v1,
+  Vorbis, fallback do nome), as 4 abas desenhadas com conteúdo (contagem de cores no
+  canvas), o `--selftest` (teclas sintéticas: OK/L-R/setas/volume/B, inclusive "soltar
+  a tecla não repete a ação"), vídeo H.264 de verdade decodificado e escalado (barras
+  SMPTE conferidas cor a cor), e o launcher (falha propaga status ≠ 0, sessão curta não
+  é sucesso, motivo no log). Também conferi as fontes contra os **cabeçalhos do
+  bookworm arm64** (`--check`), que é onde `SwsContext` deixou de existir como typedef.
+- **Bugs que apareceram na revisão e foram corrigidos:** `nmcli`/`bluetoothctl` eram
+  chamados no caminho do desenho (a cada 1 s), travando a UI — agora um thread atualiza
+  o estado a cada 5 s e a UI só lê o cache; o relógio do áudio não zerava no seek (o
+  vídeo passaria a ser apresentado no ritmo errado); o pedido de seek era consumido por
+  um `else if` inútil no `main`; a índex do foco dos controles era a mesma da lista.
+- **Armadilhas que custaram tempo aqui:**
+  1. `SwsContext` (typedef) não existe no FFmpeg 5.1 — usar `struct SwsContext *`.
+  2. `snd_mixer_next_elem` não existe; o certo é `snd_mixer_elem_next`.
+  3. `av_find_best_stream` devolve **código de erro negativo**, não `-1`: comparar
+     sempre com `>= 0`.
+  4. `--play` saía na hora porque o laço via `tocando=false` antes de o thread abrir o
+     arquivo — esperar `aberto` primeiro.
+  5. ID3v1 é **exatamente 128 bytes** no fim do arquivo; um "TAG" de 93 bytes não é lido
+     (meu fixture de teste estava errado, não o parser).
+  6. `TRIP`/`&` em `snprintf` com tamanho estimado gera `-Wformat-truncation`; use
+     `%.*s`.
+- **Pendente / próximo (nada disso rodou no aparelho):**
+  1. **DRM/KMS**: confirmar que o page flip funciona e que o `fbcon` não desenha por
+     cima (o app pede `KD_GRAPHICS`; se piscar, olhar `/boot/media-player.log`).
+  2. **Desempenho**: 720p é decode em software (sem VPU no mainline). Medir 480p e 720p.
+  3. **Áudio**: confirmar que o mux do codec continua em `HP` (AGENTS.md §4.2.1) e que o
+     mixer `Playback Volume` existe com esse nome no rk817.
+  4. **Gamepad**: o mapa vem do DTS (`docs/hardware-e-drivers.md` §3.2.1); a zona morta
+     do analógico (|v−512| > 200) foi calculada, não medida.
+  5. Gerar a imagem: `git tag media-player-v1 && git push origin media-player-v1`.
+- **Extra (achado no teste final):** a capa só aparecia com música tocando; agora, sem
+  reprodução, ela vem da faixa destacada na lista (era o que faltava para o painel não
+  ficar com o disco genérico). Validado decodificando um PNG de verdade e contando os
+  pixels da capa no canvas.

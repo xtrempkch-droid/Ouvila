@@ -2,7 +2,7 @@
 
 Sistema Linux para media players RK3566, com foco inicial nos handhelds Powkiddy X55, X35S e X35H.
 
-> **Status (2026-10-25):** duas variantes, ambas compilando e testadas em hardware.
+> **Status (2026-10-25):** três variantes compilando; duas testadas em hardware.
 > - **`kodi` (multimídia)** — build **#120**, validada no **X55** (vídeo, áudio,
 >   botões, Wi-Fi, Bluetooth, USB) e no **X35H** (vídeo, áudio, botões). No X35H **não
 >   há Wi-Fi nem Bluetooth** e a porta USB não ancora — ver [docs/status.md](docs/status.md).
@@ -30,6 +30,7 @@ devices/<device>/
 variants/<variant>/
   packages/               pacotes da variante
   overlay/                serviços e arquivos específicos da variante
+  src/                    código do app (variante media-player)
   variant.conf            metadados da variante
 build/
   build.sh                entrada para empacotar <device> <variant>
@@ -48,9 +49,11 @@ docs/                     build, arquitetura e porting
 | `powkiddy-x35h` | Powkiddy X35H | Sem DTS/DTB independente validado |
 | `game-console-r35s` | Game Console R35S / R36S | **RK3326** (não RK3566): preparada, fora deste pipeline — ver [docs/r35s-rk3326.md](docs/r35s-rk3326.md) |
 
-O projeto tem **duas variantes** (o mesmo kernel/DTB, mudando o que entra no rootfs):
-**`kodi`** (multimídia) e **`retroarch`** (jogos). Detalhes, como escolher no build e
-as armadilhas de driver em [docs/variantes.md](docs/variantes.md).
+O projeto tem **três variantes** (o mesmo kernel/DTB, mudando o que entra no rootfs):
+**`kodi`** (multimídia), **`retroarch`** (jogos) e **`media-player`** (app de mídia
+único: um binário em C que desenha no DRM/KMS, decodifica com o FFmpeg e toca no ALSA,
+sem compositor, navegador nem player externo). Detalhes, como escolher no build e as
+armadilhas de driver em [docs/variantes.md](docs/variantes.md).
 
 A variante padrão do build é `kodi` (Debian Bookworm + Weston/Wayland). Uma única imagem atende os três aparelhos: o device tree e a rotação mudam por arquivo no cartão (`extlinux/extlinux.conf.*` e `walkmam.conf`), sem recompilar. O teste no Powkiddy X55 revelou tela preta com erros no caminho DSI/VOP; o workflow desabilita HDMI como workaround experimental, conforme `docs/build.md`. Valores de pinagem, GPIO e display não são inferidos; consulte `docs/porting.md` antes de adicionar hardware.
 
@@ -115,7 +118,7 @@ que foi verificado em hardware e o que ainda é hipótese.
 - [Estado do projeto e retomada](docs/status.md) — comece por aqui
 - [Game Console R35S (RK3326): painel e port](docs/r35s-rk3326.md) — placa fora do pipeline RK3566
 - [Fluxo de build](docs/build.md)
-- [Variantes: `kodi` (multimídia) e `retroarch` (jogos)](docs/variantes.md)
+- [Variantes: `kodi` (multimídia), `retroarch` (jogos) e `media-player`](docs/variantes.md)
 - [Hardware e drivers por dispositivo (referência de portabilidade)](docs/hardware-e-drivers.md) — o que copiar para levar o aparelho a outro sistema
 - [Descobertas de hardware (confirmado/hipótese)](docs/findings.md)
 - [Roadmap](docs/roadmap.md)

@@ -1,0 +1,42 @@
+# Pacotes da variante "media-player" (app de mídia único).
+#
+# IMPORTANTE — como validar um nome antes de acrescentar:
+# NÃO confie em https://packages.debian.org/bookworm/arm64/<pacote>: ele devolve
+# HTTP 200 mesmo quando o pacote não existe para a arquitetura (é uma página de
+# erro). A fonte da verdade é o índice da arquitetura:
+#
+#   curl -s http://deb.debian.org/debian/dists/bookworm/main/binary-arm64/Packages.gz \
+#     | zcat | grep -c '^Package: <nome>$'
+#
+# O passo "Preflight da variante" do workflow confere exatamente isso.
+#
+# Aqui só entram BIBLIOTECAS: o app é o binário walkmam-media (compilado no
+# runner a partir de variants/media-player/src). Não há compositor, navegador
+# nem player externo para instalar — é isso que faz a variante ser um binário só.
+
+# Decodificação de áudio/vídeo (FFmpeg 5.1 do bookworm): libavformat/libavcodec/
+# libswresample para mídia e libswscale para escalar o quadro ao tamanho da tela.
+libavformat59
+libavcodec59
+libavutil57
+libswresample4
+libswscale6
+
+# Saída de vídeo direto no KMS (sem X11/Wayland) e som direto no ALSA.
+libdrm2
+libasound2
+
+# Texto da UI (FreeType) e fontes.
+libfreetype6
+libfontconfig1
+libpng16-16
+zlib1g
+fonts-dejavu-core
+
+# Rádio e utilitários que os recursos já compartilhados usam.
+wpasupplicant
+iw
+wireless-tools
+rfkill
+bluez
+busybox
