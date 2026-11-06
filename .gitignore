@@ -17,4 +17,5 @@
 /rk3566-*-sdcard.img
 /rk3566-*-sdcard.img.gz
 /build/ouvila-media
+/out-rk3326/
 __pycache__/
