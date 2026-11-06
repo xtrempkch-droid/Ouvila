@@ -8,6 +8,7 @@ Utilitários auxiliares independentes do fluxo principal entram aqui. O empacota
 | [`fdt-dump.py`](fdt-dump.py) | Lê um `.dtb` sem precisar de `dtc`: modos `dts`, `no`, `prop`, `lista` e `phandles` (para resolver `<&gpio3 16 1>`). O CI tem `dtc`; a máquina de trabalho do projeto não |
 | [`joypad_from_dtb.py`](joypad_from_dtb.py) | Tira o mapa do `rocknix-joypad` do DTB (Kodi/RetroArch/media-player) |
 | [`panel_overlay_from_dts.py`](panel_overlay_from_dts.py) | Converte o bloco `panel@0` de um DTS de fabricante no overlay `rocknix,generic-dsi` |
+| [`build-local-rk3326.sh`](build-local-rk3326.sh) | **Gera a imagem do R35S/R36S nesta máquina**, sem GitHub Actions (docker + `--privileged -u 0`). Ver [`docs/build-local.md`](../docs/build-local.md) |
 | [`install-image-to-emmc.sh`](install-image-to-emmc.sh) | Grava a imagem no eMMC da X35H (confere tamanho e zera o GPT) |
 | [`test-media-player.sh`](test-media-player.sh) | Testes offline da variante `media-player` (biblioteca, UI, idiomas, temas, decoder, launcher) |
 
@@ -40,3 +41,15 @@ Quatro detalhes que custaram tempo e já estão resolvidos no script:
 Exemplo real (R35S, 2026-11-06): o resultado está em
 [`docs/r35s-rk3326.md`](../docs/r35s-rk3326.md) §12 e o DTB em
 [`devices/game-console-r35s/dts/referencia/`](../devices/game-console-r35s/dts/referencia/Readme.md).
+
+## Gerar a imagem localmente (R35S/R36S)
+
+```sh
+./tools/build-local-rk3326.sh --variante media-player
+```
+
+Precisa de `docker`, ~25 GB livres e internet. A imagem sai em `out-rk3326/`, com
+`.sha256`. O script reaproveita o container entre tentativas (o kernel compilado fica em
+`/work`), então uma falha no meio do caminho não custa outros 35 min de kernel.
+Detalhes, tempo esperado e as armadilhas (inclusive a do `binfmt_misc` que derrubou a
+máquina) estão em [`docs/build-local.md`](../docs/build-local.md).
