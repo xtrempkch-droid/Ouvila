@@ -714,6 +714,22 @@ static int wm_selftest(Ui *ui, Canvas *canvas, Library *lib)
     ev.key = WM_KEY_MENU;
     ui_handle_key(ui, &ev);
 
+    /* 24. Eixos analógicos: a faixa depende da placa. No RK3566 o SARADC entrega
+     * 0..1023 (centro 512) e no RK3326 o rocknix-singleadc-joypad entrega
+     * -1800..1800 (centro 0). Sem isto o analógico parado do R35S era lido como
+     * "esquerda/cima" e a lista rolava sozinha. */
+    CONFERE(wm_eixo_direcao(0, 1023, 0, 512) == 0
+                && wm_eixo_direcao(0, 1023, 0, 900) == 1
+                && wm_eixo_direcao(0, 1023, 0, 100) == -1,
+            "eixo do RK3566 (0..1023): centro parado, 900 direita, 100 esquerda");
+    CONFERE(wm_eixo_direcao(-1800, 1800, 32, 0) == 0
+                && wm_eixo_direcao(-1800, 1800, 32, 1500) == 1
+                && wm_eixo_direcao(-1800, 1800, 32, -1500) == -1
+                && wm_eixo_direcao(-1800, 1800, 32, 200) == 0,
+            "eixo do RK3326 (-1800..1800): centro 0 parado, 1500 direita");
+    CONFERE(wm_eixo_direcao(0, 0, 0, 0) == 0,
+            "faixa invalida (max == min) nao gera direcao");
+
     /* 23. WiFi/Bluetooth agora moram no menu, não numa aba: as 4 abas têm de
      * ter nomes distintos, e "Rádio" não existe mais. */
     {

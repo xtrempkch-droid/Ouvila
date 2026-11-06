@@ -9,7 +9,8 @@ name: Build RK3326 (Game Console R35S/R36S)
 #                        que já funciona; grava só os setores do loader)
 #           = imagem  -> imagem SD completa (loader + kernel v6.12 + DTB +
 #                        overlay de painel + rootfs Debian + serviço escolhido)
-#   variant = kodi | retroarch (define pacotes, overlay e serviço do tty1)
+#   variant = kodi | retroarch | media-player (define pacotes, overlay e
+#             serviço do tty1; media-player compila o app em C do projeto)
 #
 # Releases: publica com nome proprio (rk3326-r36s-<variant>-sdcard.img.gz) no
 # MESMO release da linha RK3566 — tag vira o release da tag, push/main vira
@@ -34,6 +35,7 @@ on:
         options:
           - kodi
           - retroarch
+          - media-player
         default: kodi
       loader:
         description: "Loader: oficial (o da ROCKNIX, que liga) ou mainline (em teste, NAO liga no aparelho)"
@@ -467,9 +469,64 @@ jobs:
         EOF
         sudo chroot rootfs sh -c 'echo root:root | chpasswd'
 
+        # App de midia unico: o binario em C e a camada inteira (DRM/KMS +
+        # FFmpeg + ALSA). Compila cruzado contra os cabecalhos do bookworm, que
+        # vem do proprio rootfs desta placa - assim ele linka contra o FFmpeg
+        # 5.1 da imagem, e nao contra o do runner.
+        if [ "$VARIANT" = "media-player" ]; then
+          echo "--> [media-player] Conferindo bibliotecas e fontes no rootfs..."
+          if ! sudo chroot rootfs sh -c '
+                for lib in libavformat libavcodec libavutil libswresample \
+                           libswscale libdrm libasound libfreetype libharfbuzz; do
+                  ldconfig -p | grep -q "$lib\." || { echo "faltando: $lib" >&2; exit 1; }
+                done
+                for f in dejavu/DejaVuSans.ttf noto/NotoSansArabic-Regular.ttf \
+                         noto/NotoSansDevanagari-Regular.ttf \
+                         noto/NotoSansBengali-Regular.ttf wqy/wqy-zenhei.ttc; do
+                  [ -r "/usr/share/fonts/truetype/$f" ] || {
+                    echo "faltando a fonte $f" >&2; exit 1; }
+                done
+              '; then
+            echo "!!! bibliotecas/fonte do media-player ausentes no rootfs" >&2
+            exit 1
+          fi
+          echo "--> [media-player] Compilando o app (cross arm64)..."
+          SYSROOT=/tmp/wm-sysroot
+          rm -rf "$SYSROOT"
+          chmod +x build/media-player-sysroot.sh build/media-player.sh
+          ./build/media-player-sysroot.sh "$SYSROOT"
+          WM_SYSROOT="$SYSROOT" WM_OUT=build/ouvila-media ./build/media-player.sh
+          sudo install -D -m 0755 build/ouvila-media rootfs/usr/local/bin/ouvila-media
+          sudo install -D -m 0755 \
+            variants/media-player/overlay/usr/local/bin/start-media-player.sh \
+            rootfs/usr/local/bin/start-media-player.sh
+          sudo install -D -m 0644 \
+            variants/media-player/overlay/etc/systemd/system/media-player.service \
+            rootfs/etc/systemd/system/media-player.service
+          # Sem este drop-in o logind desliga o aparelho no toque de power, e o
+          # "apagar a tela" do app nunca acontece.
+          sudo install -D -m 0644 \
+            variants/media-player/overlay/etc/systemd/logind.conf.d/10-ouvila-media-power.conf \
+            rootfs/etc/systemd/logind.conf.d/10-ouvila-media-power.conf
+          # As pastas de midia NAO sao criadas aqui: quem faz isso e o
+          # build/create-image.sh, na particao FAT (p1), que e a que se abre no
+          # PC. Criar dentro do rootfs so criaria um diretorio que o proprio
+          # mount de /boot esconde.
+          echo "--> [media-player] Conferindo que o binario roda (qemu-arm64)..."
+          sudo cp /usr/bin/qemu-aarch64-static rootfs/usr/bin/ 2>/dev/null || true
+          if sudo chroot rootfs /usr/local/bin/ouvila-media --version; then
+            echo "--> ok: o binario executa e responde --version"
+          else
+            echo "!!! o binario nao executou no rootfs" >&2
+            exit 1
+          fi
+        fi
+
         # serviço do tty1 conforme a variante
         if [ "$VARIANT" = "kodi" ]; then
           SERVICO=kodi.service
+        elif [ "$VARIANT" = "media-player" ]; then
+          SERVICO=media-player.service
         else
           SERVICO=retroarch.service
         fi

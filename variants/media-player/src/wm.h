@@ -627,6 +627,10 @@ typedef struct Input Input;
 
 Input *input_open(void);
 void input_close(Input *in);
+/* Direção de um eixo normalizada pela faixa do driver (-1, 0, 1).
+ * A faixa muda por placa: 0..1023 no RK3566 e -1800..1800 no RK3326, então o
+ * app lê o ABSINFO em vez de assumir um centro. Exportada para o selftest. */
+int wm_eixo_direcao(int minimo, int maximo, int flat, int valor);
 /* Espera até timeout_ms por eventos. Devolve quantos preencheu em `out`. */
 int input_poll(Input *in, struct KeyEvent *out, int max, int timeout_ms);
 /* Nome do gamepad encontrado (ou "(nenhum)"). */

@@ -8,6 +8,16 @@
  *   BTN_SELECT/START/MODE, BTN_THUMBL/THUMBR, BTN_DPAD_*
  * e o analógico esquerdo em ABS_X/ABS_Y.
  *
+ * ATENÇÃO — a FAIXA dos eixos depende da placa, e assumir 0..1023 quebra em
+ * metade delas:
+ *   - RK3566 (X55/X35S/X35H), driver `rocknix-joypad`: SARADC cru, 0..1023;
+ *   - RK3326 (R35S/R36S), driver `rocknix-singleadc-joypad`: -1800..+1800 com
+ *     centro em 0 (e X/Y invertidos no próprio driver).
+ * Por isso a faixa é lida do aparelho com EVIOCGABS(ABS_X/ABS_Y) ao abrir a
+ * fonte e a zona morta é proporcional ao curso do eixo. Com o valor fixo de
+ * antes, o analógico parado do R35S (0) daria "0 - 512 = -512", ou seja
+ * esquerda/cima permanentes e a lista rolando sozinha.
+ *
  * Não há biblioteca de joystick em uso (nem SDL nem libinput): o formato de
  * struct input_event do Linux é estável e é o mesmo que o kernel entrega.
  *
@@ -34,6 +44,11 @@ typedef struct {
     char caminho[64];
     char nome[128];
     bool eh_gamepad;
+    /* Faixa real dos eixos, lida do driver (EVIOCGABS). Sem isto o app não
+     * funciona em duas placas com escalas diferentes. */
+    int abs_x_min, abs_x_max;
+    int abs_y_min, abs_y_max;
+    int abs_flat;            /* ruído declarado pelo driver, no mesmo eixo */
 } Fonte;
 
 struct Input {
@@ -52,6 +67,40 @@ struct Input {
     bool repetindo;
     int chave_repetindo;
 };
+
+/* Direção de um eixo, já normalizada pela faixa do driver.
+ *
+ * `flat` é o ruído que o próprio driver declara (evita zona morta menor que o
+ * ruído); a zona morta é ~18% de cada lado do centro, que é o que a navegação
+ * por lista precisa para não disparar sem querer.
+ *
+ * Devolve -1, 0 ou 1. Exportada para o --selftest poder conferir as duas faixas
+ * (0..1023 e -1800..1800) sem precisar de gamepad. */
+int wm_eixo_direcao(int minimo, int maximo, int flat, int valor)
+{
+    int centro;
+    int meia;
+    int zona;
+    int delta;
+
+    if (maximo <= minimo) {
+        return 0;
+    }
+    centro = minimo + (maximo - minimo) / 2;
+    meia = (maximo - minimo) / 2;
+    zona = meia * 18 / 100;
+    if (flat > 0 && flat * 2 > zona) {
+        zona = flat * 2;
+    }
+    delta = valor - centro;
+    if (delta > zona) {
+        return 1;
+    }
+    if (delta < -zona) {
+        return -1;
+    }
+    return 0;
+}
 
 static bool casar_nome(const char *nome, const char *chave)
 {
@@ -123,6 +172,34 @@ static void abrir_fontes(Input *in)
             snprintf(f->caminho, sizeof(f->caminho), "%s", caminho);
             snprintf(f->nome, sizeof(f->nome), "%s", nome);
             f->eh_gamepad = gamepad;
+            /* Faixa dos eixos: sem isso a zona morta seria chutada e a escala
+             * de uma placa quebraria a outra (ver o comentário do topo). */
+            f->abs_x_min = 0;
+            f->abs_x_max = 1023;
+            f->abs_y_min = 0;
+            f->abs_y_max = 1023;
+            f->abs_flat = 0;
+            if (gamepad) {
+                struct input_absinfo ai;
+
+                memset(&ai, 0, sizeof(ai));
+                if (ioctl(fd, EVIOCGABS(ABS_X), &ai) == 0 && ai.maximum > ai.minimum) {
+                    f->abs_x_min = ai.minimum;
+                    f->abs_x_max = ai.maximum;
+                    f->abs_flat = ai.flat > 0 ? ai.flat : 0;
+                }
+                memset(&ai, 0, sizeof(ai));
+                if (ioctl(fd, EVIOCGABS(ABS_Y), &ai) == 0 && ai.maximum > ai.minimum) {
+                    f->abs_y_min = ai.minimum;
+                    f->abs_y_max = ai.maximum;
+                    if (ai.flat > f->abs_flat && ai.flat > 0) {
+                        f->abs_flat = ai.flat;
+                    }
+                }
+                wm_log("input: eixos de %s: X %d..%d  Y %d..%d  flat %d",
+                       nome, f->abs_x_min, f->abs_x_max, f->abs_y_min,
+                       f->abs_y_max, f->abs_flat);
+            }
             in->n_fontes++;
             if (gamepad && !in->nome_gamepad[0]) {
                 snprintf(in->nome_gamepad, sizeof(in->nome_gamepad), "%s", nome);
@@ -340,10 +417,14 @@ static int drenar(Input *in, struct KeyEvent *out, int max, double agora)
         while (read(in->fontes[i].fd, &ev, sizeof(ev)) == (ssize_t) sizeof(ev)) {
             if (ev.type == EV_ABS) {
                 if (ev.code == ABS_X || ev.code == ABS_Y) {
-                    /* Eixo do SARADC: 0..1023, centro ~512. A zona morta evita
-                     * "andar sozinho" com o analógico solto. */
-                    int valor = ev.value - 512;
-                    int dir = valor > 200 ? 1 : (valor < -200 ? -1 : 0);
+                    /* Centro e zona morta saem da faixa que o driver declara
+                     * (0..1023 no RK3566, -1800..1800 no RK3326). */
+                    const Fonte *fonte = &in->fontes[i];
+                    int dir = (ev.code == ABS_X)
+                                  ? wm_eixo_direcao(fonte->abs_x_min, fonte->abs_x_max,
+                                                    fonte->abs_flat, ev.value)
+                                  : wm_eixo_direcao(fonte->abs_y_min, fonte->abs_y_max,
+                                                    fonte->abs_flat, ev.value);
 
                     if (ev.code == ABS_X) {
                         in->eixo_x = dir;

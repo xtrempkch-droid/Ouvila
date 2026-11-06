@@ -26,6 +26,10 @@ para testar no aparelho.
 **Manual:** Actions → *Build Mainline RK3566 (Powkiddy X55) OS* → **Run workflow** →
 campo **variant** → `kodi`, `retroarch` ou `media-player`.
 
+Na linha **RK3326** (R35S/R36S) é o workflow *Build RK3326 (Game Console R35S/R36S)*,
+que também aceita `variant=media-player` — é a mesma imagem de app, com o kernel/DTB
+daquela placa. Ver [r35s-rk3326.md](r35s-rk3326.md) §12.
+
 **Por tag:** uma tag que comece com `retroarch-` constrói a variante de jogos e uma que
 comece com `media-player-` constrói a de mídia; as duas também servem para marcar uma
 versão:

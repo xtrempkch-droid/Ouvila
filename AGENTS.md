@@ -24,6 +24,7 @@ Resumo:
 | X35H: USB | **falha no controlador**: `dwc3 ... failed to enable ep0out` (só no X35H). DTBs oficiais comparados e idênticos. Falta o teste do pendrive |
 | X35H: Wi-Fi/BT | **não existem** nesta imagem: `mmc3: Failed to initialize a non-removable card` (SDIO do rádio não responde) |
 | X55 | tudo o que a imagem entrega foi validado, incluindo áudio no jack e no alto-falante |
+| **R35S/R36S** (RK3326) | hardware **lido pelo console serial** em 2026-11-06 (`docs/r35s-rk3326.md` §12). A **imagem nunca foi bootada**: o loader mainline falhou (§11). O pipeline já aceita `variant=media-player` |
 
 **Para gerar a imagem de jogos:** `git tag retroarch-vN && git push origin retroarch-vN`
 (push na `main` gera `kodi`; a tag `retroarch-*` gera `retroarch`). Se falhar, o passo
@@ -1335,3 +1336,73 @@ empurrar qualquer commit para a `main`:
 - **Pendente / próximo:** ver a tela no aparelho (tempo que ela fica visível e se o
   handoff para o Weston não pisca). Se demorar demais com a splash parada, o ajuste é
   `ShowDelay`/ordem, não a arte.
+
+### 2026-11-06 — Copilot (R35S: hardware extraído pelo console serial/TTL)
+
+- **Pedido:** o usuário ligou um adaptador TTL no **R35S** e pediu para extrair do
+  aparelho tudo o que falta para adicioná-lo ao projeto, **ignorando o sistema que está
+  rodando nele**.
+- **Ferramentas novas (ficam no repo, servem para qualquer placa):**
+  - `tools/ttl-extract.py` — conversa com o console serial e traz identificação, DRM,
+    backlight, entrada (evdev + bitmaps de capacidade), ALSA, energia, armazenamento,
+    USB, rádio, `dmesg` e o **device tree vivo**; gera `hardware.md` legível;
+  - `tools/fdt-dump.py` — leitor de `.dtb` em Python puro (`dts`/`no`/`prop`/`lista`/
+    `phandles`), porque **não há `dtc` nesta máquina nem no runner**.
+- **Medido no aparelho (nada inferido; tudo em `docs/r35s-rk3326.md` §12):**
+  - `model = Game Console R36S`, `compatible = gameconsole,r35s` +
+    `gameconsole,r36s` + `rockchip,rk3326` → **a R35S é a mesma placa da R36S**;
+  - Cortex-A35 4×, 1 GB, kernel 6.12 do aparelho, U-Boot 2024.10, console `ttyS2`
+    a 1 500 000;
+  - **o nosso overlay de painel está certo**: 160 entradas de `panel_description`, 159
+    idênticas e uma só com espaço duplo (sem efeito); `reset-gpios` = gpio3 pin 16;
+    `card0-DSI-1 connected` com 640x480 e o modo de **60 Hz** como preferido;
+  - **joypad** `rocknix-singleadc-joypad`, `r36s_Gamepad` (vendor 0x0001, product
+    0x1188), 17 botões GPIO + 4 eixos por mux de ADC; tabela completa de GPIO no doc;
+  - **eixos em −1800..+1800 com centro 0** e X/Y invertidos — **≠ RK3566 (0..1023)**;
+  - **áudio** rk817 via simple-card, roteamento `Speaker → SPKO` (**≠ X55**, que usa
+    HPOL/HPOR); detecção de fone em gpio2 pin 22;
+  - **energia**: bateria 3380 mAh/2 A no DT, mas o kernel do aparelho não tinha
+    `power_supply` nenhum;
+  - **dois slots SD os dois com card-detect** (`Got CD GPIO` nos dois) e **eMMC
+    desligado**; o cartão do sistema enumerou em `mmc1` = `mmc@ff370000`;
+  - **USB é `dwc2`** (`usb@ff300000`, `dr_mode = "peripheral"`) e o **UDC existe**
+    (`/sys/class/udc/ff300000.usb`) → o gadget/SSH funciona nesta placa, ao contrário
+    da X35H (`dwc3 ... failed to enable ep0out`);
+  - **sem Wi-Fi e sem Bluetooth** (nenhum nó de SDIO/rádio no DT);
+  - **não há `pwrkey` no RK817** (nem no DT vivo nem no oficial): o aparelho só tem
+    `gpio-keys-vol` e `r36s_Gamepad` como entrada, então **não existe `KEY_POWER`** e os
+    gestos de power do `media-player` não agem aqui — resta o menu (SELECT → Apagar a
+    tela / Desligar) e o desligamento por hardware do PMIC. Para ter o gesto é preciso
+    um overlay com o filho `pwrkey` no `pmic@20`.
+- **Bug real encontrado e corrigido no app:** `variants/media-player/src/input.c`
+  calculava a direção do analógico com `valor - 512` e zona morta fixa de ±200. No
+  R35S o eixo parado vale **0**, então isso virava "esquerda/cima" permanentes e a
+  lista rolava sozinha. Agora a faixa vem do **`ABSINFO`** (`EVIOCGABS`, min/max/flat)
+  e a zona morta é proporcional (`wm_eixo_direcao()`, exportada e coberta pelo
+  `--selftest`: 46 casos agora, incluindo 0..1023 e −1800..1800).
+- **Pipeline:** `build-rk3326.yml` passou a aceitar **`variant=media-player`** (compila
+  o app cruzado contra os cabeçalhos do bookworm do próprio rootfs, instala binário,
+  launcher, serviço e o drop-in do logind, e roda `--version` no rootfs com qemu).
+- **Armadilhas que custaram tempo:**
+  1. **`FDT_END_NODE` = 2 e `FDT_END` = 9**; trocados, o parser para em silêncio depois
+     do primeiro nó (o meu primeiro `fdt-dump.py` "via" 1 filho na raiz em vez de 97);
+  2. **formato de propriedade**: só é lista de strings se *todo* byte for imprimível ou
+     NUL. Testar "termina em NUL" transformava `<0x0 0xff250000 ...>` em texto e
+     embaralhava justamente os `reg` — e daí os bancos GPIO saíam errados;
+  3. **bancos GPIO do PX30 não são lineares**: gpio0 = `0xff040000`, gpio1 =
+     `0xff250000`, gpio2 = `0xff260000`, gpio3 = `0xff270000`. Assumir "0xff25 = gpio0"
+     joga todos os pinos um banco para trás;
+  4. **eco do terminal**: o console devolve o comando e quebra a linha em 80 colunas,
+     então marcador, comando e resposta se misturam. `stty -echo` durante a extração
+     (e `stty echo` no fim) resolve; sem isso o "relatório" sai com pedaços do comando;
+  5. **o FDT tem 57 KB**: mandar em base64 cru leva minutos e perde byte. `gzip -9c |
+     base64` (≈15 KB) e recortar a partir do `H4sI` funcionou de primeira;
+  6. **`/tmp` não é compartilhado com o Docker Desktop** (só `$HOME`): a primeira
+     extração "deu certo" e os arquivos não apareceram no host;
+  7. **`docker run --rm` descarta o que foi instalado por `apt`**: para compilar o app,
+     criar o container (`-d ... sleep`), instalar e usar `docker exec`.
+- **Pendente / próximo:** a imagem do R35S **nunca foi bootada** (o loader mainline
+  falhou em 2026-10-30, §11). Com o `variant=media-player` pronto, o próximo passo é
+  rodar *Run workflow* (`target=imagem`, `loader=oficial`, `variant=media-player`) e
+  gravar; o console serial agora é a via de diagnóstico (e o UDC permite SSH em
+  10.55.0.1 se o gadget subir).

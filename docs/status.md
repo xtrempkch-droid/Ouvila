@@ -3,6 +3,40 @@
 Ponto de partida para continuar o trabalho depois de testar no aparelho. Diz o que já
 está pronto, o que ainda é **hipótese** e exatamente o que testar e devolver.
 
+## PONTO DE RETOMADA (2026-11-06) — R35S adicionado a partir do TTL
+
+> Leia esta seção antes de qualquer coisa. O resto do documento é o histórico.
+
+### R35S: hardware extraído do aparelho por console serial
+
+O usuário ligou um adaptador **TTL** no R35S e pediu para tirar do aparelho tudo o que
+falta para adicioná-lo, ignorando o sistema que estava nele. O que se aproveita não é o
+sistema: é o **device tree vivo** e o que os subsistemas respondem. Tudo está em
+[r35s-rk3326.md](r35s-rk3326.md) §12 — resumo:
+
+- **a R35S é a R36S**: `model = Game Console R36S`, `compatible` com
+  `gameconsole,r35s` + `gameconsole,r36s` + `rockchip,rk3326`;
+- **o nosso overlay de painel está correto**: 160 entradas, 159 idênticas ao painel real
+  (a única diferença é um espaço duplo) e `reset-gpios` igual;
+- **analógico em −1800..+1800** (não 0..1023 do RK3566) → corrigido no app, que agora lê
+  o `ABSINFO`; sem isso o R35S rolava a lista sozinho;
+- **USB é `dwc2` em peripheral e o UDC existe** → gadget/SSH deve funcionar (≠ X35H);
+- **dois slots SD, os dois com card-detect**, eMMC desligado;
+- **áudio `Speaker → SPKO`** (≠ X55, que usa HPOL/HPOR);
+- **sem Wi-Fi/BT**;
+- **sem `KEY_POWER`** (o RK817 não tem nó `pwrkey`): os gestos de power do app não agem — use menu (SELECT) → Apagar a tela / Desligar, e o PMIC para o desligamento por hardware.
+
+Ferramentas novas: [`tools/ttl-extract.py`](../tools/ttl-extract.py) (extração completa
+pelo serial, só leitura) e [`tools/fdt-dump.py`](../tools/fdt-dump.py) (lê `.dtb` sem
+`dtc`). O DTB da unidade ficou em
+[`devices/game-console-r35s/dts/referencia/`](../devices/game-console-r35s/dts/referencia/Readme.md).
+
+**O que falta:** a imagem do R35S **nunca foi bootada** (o loader mainline falhou em
+2026-10-30, §11 daquele doc). O pipeline agora aceita `variant=media-player` na linha
+RK3326, então o próximo passo é *Run workflow* → `target=imagem`, `loader=oficial`,
+`variant=media-player` e gravar. Com o console serial ligado, qualquer falha de boot é
+visível na hora — e o UDC permite SSH em **10.55.0.1** se o gadget subir.
+
 ## PONTO DE RETOMADA (2026-11-01, v0.3)
 
 > Leia esta seção antes de qualquer coisa. O resto do documento é o histórico.
