@@ -1,8 +1,14 @@
 name: Build RK3326 (Game Console R35S/R36S)
 
-# LINHA RK3326 — SEPARADA da linha RK3566 (build.yml). Nada aqui roda no push:
-# só pelo botão Run workflow, com escolha do que construir. Assim um build novo
-# desta placa não consome runner nem toca nas imagens do X55/X35S/X35H.
+# LINHA RK3326 — SEPARADA da linha RK3566 (build.yml). Ela NÃO roda em push de
+# branch: só pelo botão Run workflow ou por uma tag `rk3326-*`. Assim um build
+# novo desta placa não consome runner nem toca nas imagens do X55/X35S/X35H.
+#
+# Tag (o caminho sem token, usado para gerar imagem para gravar):
+#   rk3326-media-player-vN  -> variant=media-player
+#   rk3326-retroarch-vN     -> variant=retroarch
+#   rk3326-vN / outro       -> variant=kodi
+# Em ambos os casos: target=imagem, loader=oficial, kernelSource=proprio, v7.1.
 #
 # Entradas (Run workflow):
 #   target  = loader  -> só o U-Boot mainline (teste isolado, cabe num cartão
@@ -20,6 +26,9 @@ name: Build RK3326 (Game Console R35S/R36S)
 # Contexto e decisoes: docs/r35s-rk3326.md.
 
 on:
+  push:
+    tags:
+      - 'rk3326-*'
   workflow_dispatch:
     inputs:
       target:
@@ -71,13 +80,15 @@ concurrency:
 permissions:
   contents: write
 
+# Em push de tag nao existe `inputs`: o `||` cai no valor que a imagem de
+# referencia usa hoje. No botao, o que o usuario escolheu vence.
 env:
-  TARGET: ${{ github.event.inputs.target }}
-  VARIANT: ${{ github.event.inputs.variant }}
-  BAUD: ${{ github.event.inputs.baudrate }}
-  LOADER: ${{ github.event.inputs.loader }}
-  KERNEL_SOURCE: ${{ github.event.inputs.kernelSource }}
-  KERNEL_VERSION: ${{ github.event.inputs.kernelVersion }}
+  TARGET: ${{ github.event.inputs.target || 'imagem' }}
+  VARIANT: ${{ github.event.inputs.variant || 'kodi' }}
+  BAUD: ${{ github.event.inputs.baudrate || '1500000' }}
+  LOADER: ${{ github.event.inputs.loader || 'oficial' }}
+  KERNEL_SOURCE: ${{ github.event.inputs.kernelSource || 'proprio' }}
+  KERNEL_VERSION: ${{ github.event.inputs.kernelVersion || 'v7.1' }}
 
 jobs:
   build-rk3326:
@@ -86,6 +97,41 @@ jobs:
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
+
+    - name: Resolver o que construir (tag ou botão)
+      run: |
+        # `env:` não executa shell, então a variante de uma tag é derivada aqui
+        # e publicada em $GITHUB_ENV (vale para os steps seguintes). No botão
+        # nada muda: os inputs já vieram no bloco `env:`.
+        if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+          case "${GITHUB_REF_NAME}" in
+            rk3326-media-player*) NOVA=media-player ;;
+            rk3326-retroarch*)    NOVA=retroarch ;;
+            *)                    NOVA=kodi ;;
+          esac
+          echo "VARIANT=$NOVA" >> "$GITHUB_ENV"
+          echo "--> tag ${GITHUB_REF_NAME}: variant=$NOVA"
+        fi
+        echo "--> target=$TARGET variant=$VARIANT loader=$LOADER"
+        echo "--> kernel=$KERNEL_SOURCE $KERNEL_VERSION  baud=$BAUD"
+        # Falhar aqui (2 s) em vez de depois de 40 min de kernel: as opções são
+        # as mesmas do menu do botão.
+        case "$TARGET" in
+          imagem|loader) ;;
+          *) echo "!!! target invalido: $TARGET" >&2; exit 1 ;;
+        esac
+        case "$VARIANT" in
+          kodi|retroarch|media-player) ;;
+          *) echo "!!! variant invalida: $VARIANT" >&2; exit 1 ;;
+        esac
+        case "$LOADER" in
+          oficial|mainline) ;;
+          *) echo "!!! loader invalido: $LOADER" >&2; exit 1 ;;
+        esac
+        case "$KERNEL_SOURCE" in
+          proprio|rocknix) ;;
+          *) echo "!!! kernelSource invalido: $KERNEL_SOURCE" >&2; exit 1 ;;
+        esac
 
     - name: Install Build Dependencies
       run: |
@@ -97,7 +143,7 @@ jobs:
           debootstrap qemu-user-static parted kpartx dosfstools e2fsprogs rsync
 
     - name: Baixar imagem ROCKNIX - fonte unica (loader e/ou kernel)
-      if: github.event.inputs.loader == 'oficial' || github.event.inputs.kernelSource == 'rocknix'
+      if: env.LOADER == 'oficial' || env.KERNEL_SOURCE == 'rocknix'
       run: |
         URL="https://github.com/ROCKNIX/distribution/releases/download/20261001/ROCKNIX-RK3326.aarch64-20261001-a.img.gz"
         SHA="d693d2bb3cd854a54a1c742c9952f20892c8344188c696beea00c77b5bd54392"
@@ -107,7 +153,7 @@ jobs:
         ls -l rocknix.img.gz
 
     - name: Extrair loader oficial (16 MiB iniciais)
-      if: github.event.inputs.loader == 'oficial'
+      if: env.LOADER == 'oficial'
       run: |
         # O loader de fabricante (U-Boot 2017.09) vive nos 16 MiB iniciais do
         # disco: idbloader na região 32 KiB..8 MiB e uboot.img de 8..16 MiB.
@@ -138,7 +184,7 @@ jobs:
         sha256sum uboot/idbloader.img uboot/u-boot.itb
 
     - name: Fetch U-Boot and rkbin (commits fixos, os mesmos do build.yml)
-      if: github.event.inputs.loader == 'mainline'
+      if: env.LOADER == 'mainline'
       run: |
         UBOOT_COMMIT=0a55b098d6f5f6bafa84fc2f18b433dd167bf729
         RKBIN_COMMIT=3e288fe814e059dd06833495f845cab04ac20a5c
@@ -164,7 +210,7 @@ jobs:
         echo "rkbin em $(git -C rkbin rev-parse HEAD)"
 
     - name: Build U-Boot mainline (odroid-go2) for RK3326
-      if: github.event.inputs.loader == 'mainline'
+      if: env.LOADER == 'mainline'
       run: |
         cd uboot
         export ARCH=arm64
@@ -231,7 +277,7 @@ jobs:
         echo "idbloader: $(stat -c%s idbloader.img) bytes | u-boot.itb: $(stat -c%s u-boot.itb) bytes"
 
     - name: Empacotar loader
-      if: github.event.inputs.loader == 'mainline'
+      if: env.LOADER == 'mainline'
       run: |
         mkdir -p out
         cp uboot/idbloader.img out/
@@ -254,7 +300,7 @@ jobs:
         cd out && sha256sum idbloader.img u-boot.itb > SHA256SUMS && cat SHA256SUMS
 
     - name: Upload loader artifact
-      if: github.event.inputs.loader == 'mainline'
+      if: env.LOADER == 'mainline'
       uses: actions/upload-artifact@v4
       with:
         name: rk3326-loader-odroid-go2
@@ -263,7 +309,7 @@ jobs:
 
     # ------------------------------------------------------------------ kernel
     - name: Extrair KERNEL do ROCKNIX (mesma fonte do loader e do DTB)
-      if: github.event.inputs.target == 'imagem' && github.event.inputs.kernelSource == 'rocknix'
+      if: env.TARGET == 'imagem' && env.KERNEL_SOURCE == 'rocknix'
       run: |
         # Descompacta a imagem inteira (2 GiB) e le a particao FAT para tirar o
         # /KERNEL (Linux 7.1.2 da ROCKNIX). Com isso loader, kernel, DTB e
@@ -325,7 +371,7 @@ jobs:
         ls -l kernel/arch/arm64/boot/Image
 
     - name: Fetch kernel v6.12 and ROCKNIX drivers
-      if: github.event.inputs.target == 'imagem' && github.event.inputs.kernelSource == 'proprio'
+      if: env.TARGET == 'imagem' && env.KERNEL_SOURCE == 'proprio'
       run: |
         git clone -q --depth 1 --branch "${KERNEL_VERSION}" https://github.com/torvalds/linux.git kernel
         echo "kernel: $(git -C kernel describe --always) (pedido ${KERNEL_VERSION})"
@@ -359,7 +405,7 @@ jobs:
           || printf 'obj-m += rocknix-singleadc-joypad.o\n' >> kernel/drivers/input/joystick/Makefile
 
     - name: Build kernel for RK3326
-      if: github.event.inputs.target == 'imagem' && github.event.inputs.kernelSource == 'proprio'
+      if: env.TARGET == 'imagem' && env.KERNEL_SOURCE == 'proprio'
       run: |
         cd kernel
         export ARCH=arm64
@@ -415,7 +461,7 @@ jobs:
         echo "Image: $(stat -c%s arch/arm64/boot/Image) bytes | módulos: $(find . -name '*.ko' | wc -l)"
 
     - name: Preparar DTB e overlay de painel
-      if: github.event.inputs.target == 'imagem'
+      if: env.TARGET == 'imagem'
       run: |
         mkdir -p dtbs/overlays
         # DTB base: o oficial da ROCKNIX para o R36S (painel st7703 + joypad
@@ -431,7 +477,7 @@ jobs:
 
     # ------------------------------------------------------------------ rootfs
     - name: Build Debian rootfs
-      if: github.event.inputs.target == 'imagem'
+      if: env.TARGET == 'imagem'
       run: |
         sudo debootstrap --arch=arm64 --foreign --variant=minbase \
           bookworm rootfs http://deb.debian.org/debian
@@ -538,7 +584,7 @@ jobs:
         sudo rm -f rootfs/usr/bin/qemu-aarch64-static
 
     - name: Create SD Card Image
-      if: github.event.inputs.target == 'imagem'
+      if: env.TARGET == 'imagem'
       run: |
         # RK3326: UART2 em 0xFF160000 (o RK3566 usa 0xFE660000), DTBs rk3326-*
         # e o painel aplicado por overlay em vez de DTB próprio.
@@ -572,7 +618,7 @@ jobs:
         ls -l out/
 
     - name: Upload image artifact
-      if: github.event.inputs.target == 'imagem'
+      if: env.TARGET == 'imagem'
       uses: actions/upload-artifact@v4
       with:
         name: rk3326-r36s-image
@@ -580,7 +626,7 @@ jobs:
         retention-days: 90
 
     - name: Publicar no release
-      if: github.event.inputs.target == 'imagem'
+      if: env.TARGET == 'imagem'
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
