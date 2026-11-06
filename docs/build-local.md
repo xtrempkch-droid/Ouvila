@@ -106,9 +106,106 @@ sudo sh -c 'echo -1 > /proc/sys/fs/binfmt_misc/qemu-aarch64'
 Se nem `bash` executa, o `echo` acima tem de ser feito por um **builtin** do shell que
 já está rodando (o `sh` redireciona para o procfs sem precisar de `fork`/`exec`).
 
+## Estado em 2026-11-06 — leia antes de retomar
+
+**A imagem do R35S ainda NÃO existe.** O build local chegou ao passo [5/8] e parou pelo
+problema do `binfmt_misc` acima. O que já estava pronto:
+
+| Passo | Estado |
+| --- | --- |
+| 1/8 dependências | ok |
+| 2/8 loader oficial (16 MiB, sha256 `d693d2bb…` conferido) | ok — `idbloader.img` 8 355 840 B, `u-boot.itb` 8 388 608 B |
+| 3/8 kernel v7.1 + drivers da ROCKNIX | **ok — compilou** (`Image` gerada, 7 459 objetos no momento da medida) |
+| 4/8 DTB + overlay de painel | ok |
+| 5/8 rootfs (`debootstrap` arm64) | **falhou** — é aqui que o `binfmt_misc` entra |
+| 6–8 app, serviço, imagem | não executaram |
+
+O kernel compilado foi perdido porque a primeira versão do script rodava com
+`docker run --rm`. Agora o container é nomeado (`ouvila-rk3326-build`) e **fica de pé**
+quando o build falha.
+
+### Para retomar (nesta ordem)
+
+1. **Devolver o exec da máquina** — é o bloqueio de tudo, inclusive do `git`:
+
+   ```sh
+   sudo sh -c 'echo -1 > /proc/sys/fs/binfmt_misc/qemu-aarch64'
+   ls /proc/sys/fs/binfmt_misc/     # deve mostrar só python3.14 register status
+   ```
+
+   Se o arquivo nem abrir, **reiniciar** resolve (não é persistente). Se nem `bash`
+   executa, use um shell que já esteja rodando: o redirecionamento para o procfs não
+   precisa de `fork`/`exec`.
+
+2. **Limpar os containers da tentativa:**
+
+   ```sh
+   docker rm -f ouvila-rk3326-build wm-binfmt-test
+   ```
+
+   `wm-binfmt-test` era o container do teste do `debootstrap` — foi ele que registrou o
+   `binfmt_misc`. O registro é **global no kernel**, não por container: é por isso que
+   afetou o host inteiro.
+
+3. **Rodar o build** (~50 min na primeira vez):
+
+   ```sh
+   tools/build-local-rk3326.sh --variante media-player
+   ```
+
+4. **Ou gerar pelo CI, sem depender desta máquina:** *Run workflow* no
+   `build-rk3326.yml` com `variant=media-player`, ou a tag
+   `rk3326-media-player-v0.1` (o gatilho por tag foi adicionado justamente para isso).
+
+### Pendência fora deste script: `build.yml` (linha RK3566)
+
+O `ubuntu-latest` virou **26.04 (resolute)** e lá `qemu-user-static` é pacote **virtual**
+(provido por `qemu-user-binfmt`):
+
+```text
+Package qemu-user-static is a virtual package provided by:
+  qemu-user-binfmt-hwe 1:10.2.1+ds-1ubuntu4.4
+  qemu-user-binfmt 1:10.2.1+ds-1ubuntu3.3
+E: Package 'qemu-user-static' has no installation candidate   (exit 100)
+```
+
+O job morre no **primeiro passo**, em ~10 s, e **nenhuma imagem sai** — nem do X55, nem
+do X35S/X35H. O `build-rk3326.yml` já foi corrigido (`runs-on: ubuntu-24.04`); o
+`build.yml` precisa da **mesma linha**:
+
+```diff
+ jobs:
+   build-os:
+-    runs-on: ubuntu-latest
++    runs-on: ubuntu-24.04
+```
+
+O caminho mais curto é o editor web:
+<https://github.com/xtrempkch-droid/Ouvila/edit/main/.github/workflows/build.yml>
+
+Subir de versão em vez de pinar exige trocar o nome do pacote para `qemu-user-binfmt`
+nos **dois** workflows **e** conferir que `/usr/bin/qemu-aarch64-static` continua
+existindo — é dele que o `chroot` arm64 depende.
+
+### Documentação que ficou pela metade
+
+- `AGENTS.md`: falta o registro desta sessão (o protocolo do repositório pede uma
+  entrada por trabalho concluído).
+- `docs/status.md`: falta o ponto de retomada de 2026-11-06.
+- `docs/r35s-rk3326.md`: a §12 é a referência do hardware medido, mas ainda não cita o
+  build local nem este bloqueio.
+
+São arquivos grandes (39 KB e ~44 KB); reescrevê-los por transcrição seria pior do que
+fazê-lo com `git` quando a máquina voltar.
+
 ## O que ainda **não** está testado
 
-O build local nunca chegou ao fim nesta máquina (parou no `debootstrap`, pelo problema
-acima). Ou seja: loader, DTB/overlay, kernel e rootfs já foram gerados e conferidos, mas
-**a imagem do cartão para o R35S ainda não foi produzida nem bootada**. Ver
-[`docs/status.md`](status.md) para o ponto de retomada.
+Nada desta imagem rodou no aparelho. Ou seja: loader, DTB/overlay e kernel foram
+gerados e conferidos **no build**, mas **a imagem do cartão para o R35S nunca foi
+produzida nem bootada**. As três expectativas para esta placa vêm da medição no aparelho
+([`r35s-rk3326.md`](r35s-rk3326.md) §12), não de teste nosso:
+
+- **sem Wi-Fi/BT** — os menus vão mostrar "Ausente";
+- **sem `KEY_POWER`** (não existe `pwrkey` no RK817) — use SELECT → Apagar tela /
+  Desligar, os gestos de power não vão funcionar;
+- **áudio em `SPKO`**, diferente da X55 (que usa `HP`).
