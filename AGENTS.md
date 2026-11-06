@@ -1408,3 +1408,25 @@ empurrar qualquer commit para a `main`:
   rodar *Run workflow* (`target=imagem`, `loader=oficial`, `variant=media-player`) e
   gravar; o console serial agora é a via de diagnóstico (e o UDC permite SSH em
   10.55.0.1 se o gadget subir).
+
+### 2026-11-06 (2) — Copilot (o build do RK3566 estava morto: runner pinado)
+
+- **Sintoma relatado:** "o action do rk3566 quebrou". Confirmado na API: **8 runs
+  vermelhos seguidos** no `build.yml` (`42292150603` … `42311410449`), o último verde
+  sendo `41426653516` de 2026-11-02. Todos falhavam no **mesmo** passo, *Install Build
+  Dependencies*, em ~7 s.
+- **Causa (não é chute, é a anotação do runner):** `The ubuntu-latest label will migrate
+  to Ubuntu 26 beginning October 19, 2026` + exit code **100**. No 26.04 o
+  `qemu-user-static` é pacote **virtual** (provido por `qemu-user-binfmt`), então
+  `apt-get install qemu-user-static` sai com *no installation candidate*. O
+  `build-rk3326.yml` já tinha sido pinado (`e3c4c00`) e o run `42296358630` passou — só
+  o `build.yml` tinha ficado para trás, e é ele que gera X55/X35S/X35H.
+- **Fez:** `runs-on: ubuntu-24.04` no `build.yml` (mesma escolha do RK3326) e o
+  comentário no arquivo dizendo o que conferir ao subir de versão
+  (`/usr/bin/qemu-aarch64-static`, que o `chroot` arm64 usa). Documentação acertada em
+  `docs/build-local.md` (a seção que listava isso como pendência) e `docs/status.md`.
+- **Armadilha para o próximo:** o `tests-media-player` não roda neste workflow com
+  `variant=kodi`, então um rebuild verde depois do pin **não valida nada do app** — só
+  devolve a imagem do RK3566. E lembrar: push na `main` dispara o build de ~40 min e
+  cancela qualquer run em andamento da mesma ref.
+

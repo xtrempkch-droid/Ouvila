@@ -157,10 +157,10 @@ quando o build falha.
    `build-rk3326.yml` com `variant=media-player`, ou a tag
    `rk3326-media-player-v0.1` (o gatilho por tag foi adicionado justamente para isso).
 
-### Pendência fora deste script: `build.yml` (linha RK3566)
+### `build.yml` (linha RK3566): runner pinado — RESOLVIDO em 2026-11-06
 
-O `ubuntu-latest` virou **26.04 (resolute)** e lá `qemu-user-static` é pacote **virtual**
-(provido por `qemu-user-binfmt`):
+O `ubuntu-latest` virou **26.04 (resolute)** em **2026-10-19** e lá
+`qemu-user-static` é pacote **virtual** (provido por `qemu-user-binfmt`):
 
 ```text
 Package qemu-user-static is a virtual package provided by:
@@ -169,9 +169,12 @@ Package qemu-user-static is a virtual package provided by:
 E: Package 'qemu-user-static' has no installation candidate   (exit 100)
 ```
 
-O job morre no **primeiro passo**, em ~10 s, e **nenhuma imagem sai** — nem do X55, nem
-do X35S/X35H. O `build-rk3326.yml` já foi corrigido (`runs-on: ubuntu-24.04`); o
-`build.yml` precisa da **mesma linha**:
+O job morre no **primeiro passo**, em ~7 s, e **nenhuma imagem sai** — nem do X55, nem
+do X35S/X35H. O `build-rk3326.yml` já tinha sido corrigido (`runs-on: ubuntu-24.04`) e
+passou (run `42296358630`); o `build.yml` recebeu a **mesma linha**, que é o que os
+runs `42292150603`…`42311410449` de 2026-11-06 estavam pedindo (todos falharam no passo *Install
+Build Dependencies* com exit code 100, e a anotação do runner dizia literalmente
+`The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026`).
 
 ```diff
  jobs:
@@ -180,23 +183,17 @@ do X35S/X35H. O `build-rk3326.yml` já foi corrigido (`runs-on: ubuntu-24.04`); 
 +    runs-on: ubuntu-24.04
 ```
 
-O caminho mais curto é o editor web:
-<https://github.com/xtrempkch-droid/Ouvila/edit/main/.github/workflows/build.yml>
-
 Subir de versão em vez de pinar exige trocar o nome do pacote para `qemu-user-binfmt`
 nos **dois** workflows **e** conferir que `/usr/bin/qemu-aarch64-static` continua
 existindo — é dele que o `chroot` arm64 depende.
 
 ### Documentação que ficou pela metade
 
-- `AGENTS.md`: falta o registro desta sessão (o protocolo do repositório pede uma
-  entrada por trabalho concluído).
-- `docs/status.md`: falta o ponto de retomada de 2026-11-06.
-- `docs/r35s-rk3326.md`: a §12 é a referência do hardware medido, mas ainda não cita o
-  build local nem este bloqueio.
-
-São arquivos grandes (39 KB e ~44 KB); reescrevê-los por transcrição seria pior do que
-fazê-lo com `git` quando a máquina voltar.
+- `AGENTS.md`: entrada de 2026-11-06 acrescentada (hardware do R35S pelo TTL + este
+  pin do runner).
+- `docs/status.md`: ponto de retomada de 2026-11-06 com o estado do CI.
+- `docs/r35s-rk3326.md`: a §12 é a referência do hardware medido; o build local e o
+  bloqueio do `binfmt_misc` estão neste documento.
 
 ## O que ainda **não** está testado
 

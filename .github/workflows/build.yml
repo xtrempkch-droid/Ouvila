@@ -48,7 +48,15 @@ permissions:
 
 jobs:
   build-os:
-    runs-on: ubuntu-latest
+    # PINADO: `ubuntu-latest` virou 26.04 (resolute) em 2026-10-19 e lá
+    # `qemu-user-static` é pacote VIRTUAL (provido por qemu-user-binfmt), então
+    # `apt-get install qemu-user-static` sai com "no installation candidate"
+    # (exit 100) e o job morre no PRIMEIRO passo, em ~7 s — nenhuma imagem sai.
+    # 24.04 é a imagem em que esta linha foi validada (mesma escolha do
+    # build-rk3326.yml). Subir de versão exige trocar o nome do pacote nos dois
+    # workflows E conferir que /usr/bin/qemu-aarch64-static continua existindo
+    # (o chroot arm64 do rootfs depende dele).
+    runs-on: ubuntu-24.04
 
     steps:
     - name: Checkout Repository

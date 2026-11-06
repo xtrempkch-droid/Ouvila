@@ -37,6 +37,25 @@ RK3326, então o próximo passo é *Run workflow* → `target=imagem`, `loader=o
 `variant=media-player` e gravar. Com o console serial ligado, qualquer falha de boot é
 visível na hora — e o UDC permite SSH em **10.55.0.1** se o gadget subir.
 
+### CI: a linha RK3566 estava derrubando todo build — RESOLVIDO em 2026-11-06
+
+Entre 2026-11-02 (último run verde, `41426653516`) e 2026-11-06 saíram **8 runs
+seguidos vermelhos** (`42292150603` … `42311410449`), todos com o mesmo retrato: falha
+no passo **`Install Build Dependencies`** em **~7 s**, exit code **100**, e a anotação
+do próprio runner dizendo `The ubuntu-latest label will migrate to Ubuntu 26 beginning
+October 19, 2026`.
+
+Causa: no **26.04 (resolute)** o `qemu-user-static` é pacote **virtual** (provido por
+`qemu-user-binfmt`), então `apt-get install qemu-user-static` morre com *no
+installation candidate*. O `build-rk3326.yml` já tinha sido pinado em `ubuntu-24.04`
+(run `42296358630` verde); **o `build.yml` não** — e é ele que gera as imagens do X55,
+X35S e X35H. Corrigido com a mesma linha (`runs-on: ubuntu-24.04`) + comentário no
+arquivo explicando o que fazer ao subir de versão. Ver
+[`build-local.md`](build-local.md) §"`build.yml` (linha RK3566)".
+
+**Não há mais bloqueio de CI.** O que continua pendente é de hardware: a imagem do R35S
+nunca foi bootada e o RK3566 precisa do rebuild depois do pin.
+
 ## PONTO DE RETOMADA (2026-11-01, v0.3)
 
 > Leia esta seção antes de qualquer coisa. O resto do documento é o histórico.
