@@ -188,11 +188,18 @@ def bloco_saida(texto, marca):
         return ""
     j = texto.find("MARK_", i)
     corpo = texto[i + 1:j if j > 0 else len(texto)]
-    # Tira o prompt (cada aparelho escolhe o seu) e as linhas periódicas que o
-    # sistema imprime sozinho — elas caem no meio do bloco e não são resposta.
+    # O prompt de cada aparelho aparece de duas formas e as duas sujam o bloco:
+    #   - sozinho numa linha (`root@x:/# `) ou
+    #   - no INÍCIO de uma linha, quando uma mensagem periódica do sistema foi
+    #     impressa em seguida (`giochi-system:/# energia: bateria sem medidor`).
+    # Por isso o prompt é removido de qualquer linha e, se sobrar só a mensagem
+    # periódica, a linha inteira é descartada.
     saida = []
     for linha in corpo.splitlines():
-        if re.search(r"\S+:/[#$]\s*$", linha) or linha.startswith("energia:"):
+        if re.search(r"\S*:/[#$]\s*$", linha):
+            continue
+        linha = re.sub(r"^\S*:/[#$]\s", "", linha)
+        if not linha.strip() or linha.startswith("energia:"):
             continue
         saida.append(linha)
     return "\n".join(saida)
@@ -272,15 +279,24 @@ def resumo_hardware(blocos, dtb):
         linhas.extend(l.rstrip() for l in caps.strip().splitlines())
         linhas.append("```\n")
 
+    # Seção vazia também informa: "nenhum power_supply" e "sem rádio" são
+    # resultados, não ausência de medição.
+    vazios = {
+        "som": "nenhuma placa de som registrada",
+        "energia": "nenhum `/sys/class/power_supply` (o kernel em uso não tem driver de bateria)",
+        "radio": "nenhum adaptador Wi-Fi/Bluetooth no kernel em uso",
+    }
     for chave, titulo in (("som", "Áudio (ALSA)"), ("energia", "Energia"),
                           ("armazenamento", "Armazenamento"), ("usb", "USB"),
                           ("radio", "Rádio (Wi-Fi/BT)")):
         corpo = blocos.get(chave, "").strip()
+        linhas.append("## %s\n" % titulo)
         if corpo:
-            linhas.append("## %s\n" % titulo)
             linhas.append("```")
             linhas.extend(corpo.splitlines())
             linhas.append("```\n")
+        else:
+            linhas.append("- %s\n" % vazios.get(chave, "nada encontrado"))
 
     dm = blocos.get("dmesg", "").strip()
     if dm:

@@ -33,7 +33,9 @@ arquivo aqui é a **referência do hardware da unidade**:
 ```
 
 Não precisa de `dtc`: o `tools/fdt-dump.py` lê o blob direto (o formato está
-comentado no cabeçalho do script).
+comentado no cabeçalho do script). O CI instala `device-tree-compiler`, mas a máquina
+onde este repositório é trabalhado não tem `dtc` nem `sudo` — por isso a ferramenta
+existe.
 
 ## Como reextrair (outra unidade, ou depois de trocar o painel)
 

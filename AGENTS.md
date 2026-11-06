@@ -1347,7 +1347,9 @@ empurrar qualquer commit para a `main`:
     backlight, entrada (evdev + bitmaps de capacidade), ALSA, energia, armazenamento,
     USB, rádio, `dmesg` e o **device tree vivo**; gera `hardware.md` legível;
   - `tools/fdt-dump.py` — leitor de `.dtb` em Python puro (`dts`/`no`/`prop`/`lista`/
-    `phandles`), porque **não há `dtc` nesta máquina nem no runner**.
+    `phandles`). O CI **tem** `dtc` (o workflow RK3326 instala
+    `device-tree-compiler`); esta máquina de trabalho **não** tem, nem `sudo` para
+    instalar — daí a ferramenta.
 - **Medido no aparelho (nada inferido; tudo em `docs/r35s-rk3326.md` §12):**
   - `model = Game Console R36S`, `compatible = gameconsole,r35s` +
     `gameconsole,r36s` + `rockchip,rk3326` → **a R35S é a mesma placa da R36S**;

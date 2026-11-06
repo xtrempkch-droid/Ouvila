@@ -5,7 +5,7 @@ Utilitários auxiliares independentes do fluxo principal entram aqui. O empacota
 | Ferramenta | Para quê |
 | --- | --- |
 | [`ttl-extract.py`](ttl-extract.py) | **Extrai o hardware de um aparelho pelo console serial (TTL)**: identificação, painel, entrada, áudio, energia, armazenamento, USB e o **device tree vivo** (`/sys/firmware/fdt`). Só lê — não instala nem escreve nada no aparelho |
-| [`fdt-dump.py`](fdt-dump.py) | Lê um `.dtb` sem precisar de `dtc`: modos `dts`, `no`, `prop`, `lista` e `phandles` (para resolver `<&gpio3 16 1>`) |
+| [`fdt-dump.py`](fdt-dump.py) | Lê um `.dtb` sem precisar de `dtc`: modos `dts`, `no`, `prop`, `lista` e `phandles` (para resolver `<&gpio3 16 1>`). O CI tem `dtc`; a máquina de trabalho do projeto não |
 | [`joypad_from_dtb.py`](joypad_from_dtb.py) | Tira o mapa do `rocknix-joypad` do DTB (Kodi/RetroArch/media-player) |
 | [`panel_overlay_from_dts.py`](panel_overlay_from_dts.py) | Converte o bloco `panel@0` de um DTS de fabricante no overlay `rocknix,generic-dsi` |
 | [`install-image-to-emmc.sh`](install-image-to-emmc.sh) | Grava a imagem no eMMC da X35H (confere tamanho e zera o GPT) |

@@ -68,11 +68,24 @@ struct Input {
     int chave_repetindo;
 };
 
+/* Fração de cada lado do centro que precisa ser vencida para o eixo "andar".
+ *
+ * 40% foi escolhido para PRESERVAR o número já validado no aparelho: o código
+ * antigo usava 200 de uma faixa de ±512 (0..1023 do RK3566), ou seja 39,1%.
+ * Arredondar para 40% dá 204 nessa faixa (praticamente o mesmo) e define o
+ * valor para qualquer outra escala — no RK3326 (±1800) dá 720.
+ *
+ * Era tentador usar 18% (o padrão de um gamepad), mas isso mudaria o
+ * comportamento do X55/X35H, que foi testado em hardware com o valor antigo, e
+ * analógico sensível demais faz a lista rolar sem querer — que é justamente o
+ * defeito que estamos consertando.
+ */
+#define ZONA_MORTA_PCT 40
+
 /* Direção de um eixo, já normalizada pela faixa do driver.
  *
- * `flat` é o ruído que o próprio driver declara (evita zona morta menor que o
- * ruído); a zona morta é ~18% de cada lado do centro, que é o que a navegação
- * por lista precisa para não disparar sem querer.
+ * `flat` é o ruído que o próprio driver declara; a zona morta nunca é menor que
+ * o dobro dele.
  *
  * Devolve -1, 0 ou 1. Exportada para o --selftest poder conferir as duas faixas
  * (0..1023 e -1800..1800) sem precisar de gamepad. */
@@ -88,7 +101,7 @@ int wm_eixo_direcao(int minimo, int maximo, int flat, int valor)
     }
     centro = minimo + (maximo - minimo) / 2;
     meia = (maximo - minimo) / 2;
-    zona = meia * 18 / 100;
+    zona = meia * ZONA_MORTA_PCT / 100;
     if (flat > 0 && flat * 2 > zona) {
         zona = flat * 2;
     }
@@ -179,14 +192,16 @@ static void abrir_fontes(Input *in)
             f->abs_y_min = 0;
             f->abs_y_max = 1023;
             f->abs_flat = 0;
-            if (gamepad) {
+            {
                 struct input_absinfo ai;
+                bool tem_eixo = false;
 
                 memset(&ai, 0, sizeof(ai));
                 if (ioctl(fd, EVIOCGABS(ABS_X), &ai) == 0 && ai.maximum > ai.minimum) {
                     f->abs_x_min = ai.minimum;
                     f->abs_x_max = ai.maximum;
                     f->abs_flat = ai.flat > 0 ? ai.flat : 0;
+                    tem_eixo = true;
                 }
                 memset(&ai, 0, sizeof(ai));
                 if (ioctl(fd, EVIOCGABS(ABS_Y), &ai) == 0 && ai.maximum > ai.minimum) {
@@ -195,10 +210,16 @@ static void abrir_fontes(Input *in)
                     if (ai.flat > f->abs_flat && ai.flat > 0) {
                         f->abs_flat = ai.flat;
                     }
+                    tem_eixo = true;
                 }
-                wm_log("input: eixos de %s: X %d..%d  Y %d..%d  flat %d",
-                       nome, f->abs_x_min, f->abs_x_max, f->abs_y_min,
-                       f->abs_y_max, f->abs_flat);
+                /* Só os aparelhos com analógico têm ABS; teclado e o
+                 * gpio-keys-vol não têm, e logar "0..1023" para eles só
+                 * confundiria a depuração. */
+                if (tem_eixo) {
+                    wm_log("input: eixos de %s: X %d..%d  Y %d..%d  flat %d",
+                           nome, f->abs_x_min, f->abs_x_max, f->abs_y_min,
+                           f->abs_y_max, f->abs_flat);
+                }
             }
             in->n_fontes++;
             if (gamepad && !in->nome_gamepad[0]) {
@@ -414,7 +435,12 @@ static int drenar(Input *in, struct KeyEvent *out, int max, double agora)
     for (int i = 0; i < in->n_fontes && n < max; i++) {
         struct input_event ev;
 
-        while (read(in->fontes[i].fd, &ev, sizeof(ev)) == (ssize_t) sizeof(ev)) {
+        /* `n < max` no laço interno também: uma rajada de eventos (troca de aba
+         * + analógico + botão no mesmo quadro) pode render mais de `max`
+         * entradas e estourar o array do chamador. O que sobra fica no buffer
+         * do evdev para a próxima leitura. */
+        while (n < max
+               && read(in->fontes[i].fd, &ev, sizeof(ev)) == (ssize_t) sizeof(ev)) {
             if (ev.type == EV_ABS) {
                 if (ev.code == ABS_X || ev.code == ABS_Y) {
                     /* Centro e zona morta saem da faixa que o driver declara
