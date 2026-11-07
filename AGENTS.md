@@ -1429,4 +1429,14 @@ empurrar qualquer commit para a `main`:
   `variant=kodi`, então um rebuild verde depois do pin **não valida nada do app** — só
   devolve a imagem do RK3566. E lembrar: push na `main` dispara o build de ~40 min e
   cancela qualquer run em andamento da mesma ref.
+- **Resultado verificado:** run **`42312354283`** (push `babb38d`) — **success** em
+  40 min, os 16 passos verdes, e a release `latest` recebeu
+  `rk3566-x55-mainline-sdcard.img.gz` (**363,7 MB**, sha256 `426e415c…`), atualizada em
+  `2026-11-07T00:02:41Z`. É a imagem `kodi` para gravar no X55/X35S/X35H.
+- **Também nesta entrada:** commitado (depois de validado com `bash -n`) o ajuste que
+  estava solto no working tree em `tools/build-local-rk3326.sh` — o download da imagem
+  da ROCKNIX agora **retoma** (`curl -C - --retry-all-errors`) em vez de ser pulado
+  quando existia um parcial, que foi o que derrubou o build local com `(56) Recv
+  failure`. O `docker`/`debootstrap` continua sendo o bloqueio daquele build, não o
+  download.
 

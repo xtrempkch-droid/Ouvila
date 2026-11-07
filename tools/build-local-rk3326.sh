@@ -178,17 +178,43 @@ dentro() {
     echo "=== [2/8] imagem da ROCKNIX (fonte do loader oficial)"
     local url="https://github.com/ROCKNIX/distribution/releases/download/20261001/ROCKNIX-RK3326.aarch64-20261001-a.img.gz"
     local sha="d693d2bb3cd854a54a1c742c9952f20892c8344188c696beea00c77b5bd54392"
-    # Sao 1,2 GB: se ja veio numa tentativa anterior, o cache em /out evita baixar de novo.
+    # Sao ~1,3 GB vindos de release-assets.githubusercontent.com e a conexao cai no
+    # meio (foi um "(56) Recv failure" que derrubou o build de 2026-11-06). Duas
+    # coisas sao obrigatorias aqui:
+    #   - `-C -` para RETOMAR (sem isso cada tentativa recomeca do zero);
+    #   - `--retry-all-errors`, porque o `--retry` sozinho NAO repete `(56)`.
+    # O destino e o cache em /out, que sobrevive ao `docker rm`; a copia em /work e
+    # o que o resto do script abre.
+    #
+    # ARMADILHA (2026-11-06): o codigo antigo era `elif [ ! -f rocknix.img.gz ]`.
+    # Com um parcial de 946 MB em /work ele PULAVA o download e morria no
+    # sha256sum -c. Agora o arquivo existente e sempre retomado, nunca ignorado.
     mkdir -p /out/cache
-    if [ -f /out/cache/rocknix.img.gz ] &&
-       echo "$sha  /out/cache/rocknix.img.gz" | sha256sum -c - >/dev/null 2>&1; then
-        cp -f /out/cache/rocknix.img.gz rocknix.img.gz
-        echo "    cache: imagem da ROCKNIX reaproveitada de /out/cache"
-    elif [ ! -f rocknix.img.gz ]; then
-        curl -fL --retry 3 --retry-delay 5 -o rocknix.img.gz "$url"
-    fi
-    echo "$sha  rocknix.img.gz" | sha256sum -c -
-    cp -f rocknix.img.gz /out/cache/rocknix.img.gz
+    local cache=/out/cache/rocknix.img.gz
+    local tentativa obtidos
+    for tentativa in 1 2 3 4; do
+        if [ -f "$cache" ] && echo "$sha  $cache" | sha256sum -c - >/dev/null 2>&1; then
+            echo "    cache: imagem da ROCKNIX ja integra em $cache"
+            break
+        fi
+        if [ "$tentativa" = 4 ]; then
+            # Tres retomadas falharam no checksum: o que veio esta corrompido do meio
+            # para tras e nao da para continuar em cima. Recomeca do zero uma vez.
+            echo "    sha256 nao confere depois de 3 tentativas; descartando e baixando do zero"
+            rm -f "$cache"
+        fi
+        obtidos=0
+        if [ -f "$cache" ]; then
+            obtidos=$(( $(stat -c%s "$cache") / 1048576 ))
+        fi
+        echo "    imagem da ROCKNIX: tentativa $tentativa (${obtidos} MB ja obtidos)"
+        curl -fL -C - --retry 8 --retry-delay 5 --retry-all-errors \
+            --connect-timeout 30 --speed-limit 1024 --speed-time 60 \
+            -o "$cache" "$url" ||
+            echo "    !! curl parou (status $?); o parcial ficou em $cache"
+    done
+    echo "$sha  $cache" | sha256sum -c -
+    cp -f "$cache" rocknix.img.gz
     mkdir -p uboot
     python3 - <<'PY'
 import gzip

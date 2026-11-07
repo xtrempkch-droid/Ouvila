@@ -124,6 +124,13 @@ O kernel compilado foi perdido porque a primeira versão do script rodava com
 `docker run --rm`. Agora o container é nomeado (`ouvila-rk3326-build`) e **fica de pé**
 quando o build falha.
 
+O download da imagem da ROCKNIX (~1,3 GB) também derrubou uma tentativa com
+`(56) Recv failure` do `release-assets.githubusercontent.com`. O passo [2/8] agora
+**retoma** (`curl -C -`) em vez de recomeçar, usa `--retry-all-errors` (o `--retry`
+sozinho não repete `(56)`) e, se o checksum não fechar depois de 3 retomadas, descarta o
+parcial e baixa do zero uma única vez. O cache fica em `/out/cache/rocknix.img.gz`, que
+sobrevive ao `docker rm`.
+
 ### Para retomar (nesta ordem)
 
 1. **Devolver o exec da máquina** — é o bloqueio de tudo, inclusive do `git`:
